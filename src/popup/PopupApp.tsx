@@ -1,23 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { AlgorithmName, ScanReport } from '../types'
 
-const MOCK_REPORT: ScanReport = {
-  totalMatches: 27,
-  matchesByKeyword: {
-    slot: 8,
-    gacor: 7,
-    maxwin: 5,
-    togel: 4,
-    bet: 3,
-  },
-  stats: [
-    { algorithm: 'KMP', executionTimeMs: 1.23, matchCount: 12, comparisonCount: 4521 },
-    { algorithm: 'BoyerMoore', executionTimeMs: 0.87, matchCount: 12, comparisonCount: 3102 },
-    { algorithm: 'RegEx', executionTimeMs: 0.45, matchCount: 8, comparisonCount: 0 },
-    { algorithm: 'Levenshtein', executionTimeMs: 3.12, matchCount: 7, comparisonCount: 0 },
-  ],
-  timestamp: Date.now(),
+const PREFS_KEY = 'judolDetectorPrefs'
+const REPORT_KEY = 'judolDetectorReport'
+
+interface Prefs {
+  censorMode: boolean
+  enableOcr: boolean
 }
+
+const DEFAULT_PREFS: Prefs = { censorMode: false, enableOcr: true }
 
 const ALGO_COLORS: Record<AlgorithmName, string> = {
   KMP: '#4f8ef7',
@@ -40,23 +32,83 @@ function formatTime(ms: number): string {
   return `${ms.toFixed(2)} ms`
 }
 
+async function getActiveTabId(): Promise<number | null> {
+  if (typeof chrome === 'undefined' || !chrome.tabs?.query) return null
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  return tab?.id ?? null
+}
+
+async function sendToActiveTab<T>(message: unknown): Promise<T | null> {
+  const tabId = await getActiveTabId()
+  if (tabId == null) return null
+  try {
+    return (await chrome.tabs.sendMessage(tabId, message)) as T
+  } catch {
+    return null
+  }
+}
+
+async function readStoredReport(): Promise<ScanReport | null> {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return null
+  const stored = await chrome.storage.local.get(REPORT_KEY)
+  return (stored[REPORT_KEY] as ScanReport | undefined) ?? null
+}
+
+async function readPrefs(): Promise<Prefs> {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return DEFAULT_PREFS
+  const stored = await chrome.storage.local.get(PREFS_KEY)
+  return { ...DEFAULT_PREFS, ...((stored[PREFS_KEY] as Partial<Prefs> | undefined) ?? {}) }
+}
+
+async function writePrefs(prefs: Prefs): Promise<void> {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return
+  await chrome.storage.local.set({ [PREFS_KEY]: prefs })
+}
+
 export function PopupApp() {
   const [report, setReport] = useState<ScanReport | null>(null)
   const [isScanning, setIsScanning] = useState(false)
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
+  const [statusNote, setStatusNote] = useState<string | null>(null)
 
   useEffect(() => {
-    setReport(MOCK_REPORT)
+    void (async () => {
+      const [storedPrefs, live] = await Promise.all([
+        readPrefs(),
+        sendToActiveTab<{ report: ScanReport | null; isScanning: boolean }>({ type: 'getReport' }),
+      ])
+      setPrefs(storedPrefs)
+      if (live?.report) {
+        setReport(live.report)
+        setIsScanning(live.isScanning)
+        return
+      }
+      const stored = await readStoredReport()
+      if (stored) setReport(stored)
+      else setStatusNote('Belum ada hasil scan untuk tab ini.')
+    })()
   }, [])
 
-  const handleRescan = () => {
+  const triggerRescan = useCallback(async () => {
     setIsScanning(true)
-    setTimeout(() => {
-      setReport({ ...MOCK_REPORT, timestamp: Date.now() })
-      setIsScanning(false)
-    }, 800)
-  }
+    setStatusNote(null)
+    const res = await sendToActiveTab<{ ok: boolean; report: ScanReport | null }>({ type: 'rescan' })
+    setIsScanning(false)
+    if (res?.report) {
+      setReport(res.report)
+    } else {
+      setStatusNote('Tab ini tidak bisa di-scan (mungkin halaman internal Chrome).')
+    }
+  }, [])
 
-  const maxKeywordCount = report ? Math.max(...Object.values(report.matchesByKeyword)) : 1
+  const toggleCensor = useCallback(async () => {
+    const next: Prefs = { ...prefs, censorMode: !prefs.censorMode }
+    setPrefs(next)
+    await writePrefs(next)
+    void triggerRescan()
+  }, [prefs, triggerRescan])
+
+  const maxKeywordCount = report ? Math.max(1, ...Object.values(report.matchesByKeyword)) : 1
 
   return (
     <div className="popup">
@@ -70,17 +122,24 @@ export function PopupApp() {
         </div>
         <button
           className={`btn-rescan ${isScanning ? 'scanning' : ''}`}
-          onClick={handleRescan}
+          onClick={triggerRescan}
           disabled={isScanning}
         >
           {isScanning ? 'Scanning...' : 'Rescan'}
         </button>
       </header>
 
+      <section className="section-prefs">
+        <label className="pref-toggle">
+          <input type="checkbox" checked={prefs.censorMode} onChange={toggleCensor} />
+          <span>Blur konten judol</span>
+        </label>
+      </section>
+
       {report === null ? (
         <div className="empty-state">
-          <p>Belum ada hasil scan.</p>
-          <p>Tekan Rescan untuk mulai.</p>
+          <p>{statusNote ?? 'Memuat hasil scan...'}</p>
+          {statusNote && <p>Tekan Rescan untuk mencoba lagi.</p>}
         </div>
       ) : (
         <>
@@ -91,22 +150,24 @@ export function PopupApp() {
             </div>
           </section>
 
-          <section className="section-keywords">
-            <h2>Perbandingan Keyword</h2>
-            <div className="keyword-chart">
-              {Object.entries(report.matchesByKeyword)
-                .sort(([, a], [, b]) => b - a)
-                .map(([keyword, count]) => (
-                  <div key={keyword} className="chart-row">
-                    <span className="chart-label">{keyword}</span>
-                    <div className="chart-bar-wrap">
-                      <div className="chart-bar" style={{ width: `${(count / maxKeywordCount) * 100}%` }} />
+          {Object.keys(report.matchesByKeyword).length > 0 && (
+            <section className="section-keywords">
+              <h2>Perbandingan Keyword</h2>
+              <div className="keyword-chart">
+                {Object.entries(report.matchesByKeyword)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([keyword, count]) => (
+                    <div key={keyword} className="chart-row">
+                      <span className="chart-label">{keyword}</span>
+                      <div className="chart-bar-wrap">
+                        <div className="chart-bar" style={{ width: `${(count / maxKeywordCount) * 100}%` }} />
+                      </div>
+                      <span className="chart-count">{count}x</span>
                     </div>
-                    <span className="chart-count">{count}x</span>
-                  </div>
-                ))}
-            </div>
-          </section>
+                  ))}
+              </div>
+            </section>
+          )}
 
           <section className="section-stats">
             <h2>Performa Algoritma</h2>
@@ -142,7 +203,6 @@ export function PopupApp() {
 
           <footer className="popup-footer">
             Scan terakhir: {new Date(report.timestamp).toLocaleTimeString('id-ID')}
-            <span className="mock-badge"> [MOCK DATA]</span>
           </footer>
         </>
       )}

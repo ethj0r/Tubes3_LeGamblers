@@ -234,3 +234,24 @@ section h2 {
   color: #475569;
   line-height: 1.8;
 }
+
+/* Preferences */
+.section-prefs {
+  padding: 8px 14px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.pref-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pref-toggle input {
+  accent-color: #dc2626;
+  cursor: pointer;
+}
