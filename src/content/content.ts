@@ -32,6 +32,58 @@ let currentReport: ScanReport | null = null;
 let isScanning = false;
 let cachedKeywords: string[] = [];
 
+const RESCAN_DEBOUNCE_MS = 600;
+let rescanTimer: number | null = null;
+let mutationObserver: MutationObserver | null = null;
+
+function scheduleRescan(): void {
+  if (rescanTimer != null) window.clearTimeout(rescanTimer);
+  rescanTimer = window.setTimeout(() => {
+    rescanTimer = null;
+    void performScan();
+  }, RESCAN_DEBOUNCE_MS);
+}
+
+function isOurInjection(node: Node): boolean {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const el = node as Element;
+  if (el.id === 'legamblers-tooltip') return true;
+  return el.hasAttribute(HIGHLIGHT_ATTR) || el.hasAttribute(CENSOR_ATTR) || el.hasAttribute(IMAGE_FLAG_ATTR);
+}
+
+function hasMeaningfulAddition(mutations: MutationRecord[]): boolean {
+  for (const m of mutations) {
+    if (m.type !== 'childList') continue;
+    for (const node of Array.from(m.addedNodes)) {
+      if (isOurInjection(node)) continue;
+      const parent = node.parentElement;
+      if (parent && (parent.closest(`[${HIGHLIGHT_ATTR}],[${CENSOR_ATTR}],[${IMAGE_FLAG_ATTR}]`))) continue;
+      const text = node.textContent?.trim();
+      if (text && text.length >= 4) return true;
+    }
+  }
+  return false;
+}
+
+function startAutoRescan(): void {
+  if (mutationObserver) return;
+  mutationObserver = new MutationObserver((mutations) => {
+    if (isScanning) return;
+    if (!hasMeaningfulAddition(mutations)) return;
+    scheduleRescan();
+  });
+  mutationObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function pauseAutoRescan(): void {
+  mutationObserver?.disconnect();
+}
+
+function resumeAutoRescan(): void {
+  if (!mutationObserver) return;
+  mutationObserver.observe(document.body, { childList: true, subtree: true });
+}
+
 function unwrapAll(selector: string): void {
   for (const el of Array.from(document.querySelectorAll(selector))) {
     const parent = el.parentNode;
@@ -154,6 +206,7 @@ async function performScan(): Promise<ScanReport | null> {
   if (cachedKeywords.length === 0) return null;
 
   isScanning = true;
+  pauseAutoRescan();
   try {
     const report = await runContentSearch({ keywords: cachedKeywords });
     currentReport = report;
@@ -161,6 +214,7 @@ async function performScan(): Promise<ScanReport | null> {
     return report;
   } finally {
     isScanning = false;
+    window.setTimeout(resumeAutoRescan, 150);
   }
 }
 
@@ -179,10 +233,14 @@ function bootstrap(): void {
     });
   }
 
+  const bootScan = () => {
+    void performScan().then(() => startAutoRescan());
+  };
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => void performScan(), { once: true });
+    document.addEventListener('DOMContentLoaded', bootScan, { once: true });
   } else {
-    void performScan();
+    bootScan();
   }
 }
 
