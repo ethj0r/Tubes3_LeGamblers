@@ -1,5 +1,6 @@
 import type { PatternMatcher } from '../types';
 import { kmpMatcher } from '../algorithms/kmp';
+import { loadKeywords } from '../algorithms/keywordLoader';
 import { collectPageText } from './domWalker';
 import { highlightMatches } from './highlighter';
 import { installTooltip } from './tooltip';
@@ -40,3 +41,8 @@ export function initContentSearch(options: ContentSearchOptions): void {
     runContentSearch(options);
   }
 }
+
+void loadKeywords().then((keywords) => {
+  if (keywords.length === 0) return;
+  initContentSearch({ keywords });
+});
