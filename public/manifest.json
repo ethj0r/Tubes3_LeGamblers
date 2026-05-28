@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Judol Detector",
+  "version": "1.0.0",
+  "description": "Deteksi konten judi online menggunakan KMP, Boyer-Moore, dan RegEx",
+
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/detective.png",
+      "48": "icons/detective.png",
+      "128": "icons/detective.png"
+    }
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "icons": {
+    "16": "icons/detective.png",
+    "48": "icons/detective.png",
+    "128": "icons/detective.png"
+  }
+}
