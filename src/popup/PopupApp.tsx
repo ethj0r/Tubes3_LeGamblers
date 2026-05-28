@@ -1,15 +1,14 @@
-import { useState, useEffect } from 'react'
-import type { ScanReport, AlgorithmName } from '../types'
+import { useEffect, useState } from 'react'
+import type { AlgorithmName, ScanReport } from '../types'
 
-// Mock data palsu buat ngetes UI karena backend belum selesai
 const MOCK_REPORT: ScanReport = {
   totalMatches: 27,
   matchesByKeyword: {
-    'slot': 8,
-    'gacor': 7,
-    'maxwin': 5,
-    'togel': 4,
-    'bet': 3,
+    slot: 8,
+    gacor: 7,
+    maxwin: 5,
+    togel: 4,
+    bet: 3,
   },
   stats: [
     { algorithm: 'KMP', executionTimeMs: 1.23, matchCount: 12, comparisonCount: 4521 },
@@ -20,7 +19,6 @@ const MOCK_REPORT: ScanReport = {
   timestamp: Date.now(),
 }
 
-// Warna per algoritma biar gampang dibedain di chart
 const ALGO_COLORS: Record<AlgorithmName, string> = {
   KMP: '#4f8ef7',
   BoyerMoore: '#f7914f',
@@ -30,9 +28,15 @@ const ALGO_COLORS: Record<AlgorithmName, string> = {
   RabinKarp: '#8e4fc9',
 }
 
-// Format waktu: kalau < 1ms tampilkan µs, kalau >= 1ms tampilkan ms
+const ICONS = {
+  detective: '/icons/detective.png',
+  time: '/icons/time.png',
+  checklist: '/icons/checklist.png',
+  compareArrows: '/icons/compare_arrows.png',
+}
+
 function formatTime(ms: number): string {
-  if (ms < 1) return `${(ms * 1000).toFixed(0)} µs`
+  if (ms < 1) return `${(ms * 1000).toFixed(0)} us`
   return `${ms.toFixed(2)} ms`
 }
 
@@ -42,50 +46,23 @@ export function PopupApp() {
 
   useEffect(() => {
     setReport(MOCK_REPORT)
-
-    // TODO: uncomment waktu backend sudah kirim ScanReport 
-    // Cara kerjanya: content script Orang B kirim pesan dengan tipe 'SCAN_REPORT',
-    // popup dengerin di sini, terus update tampilan.
-    //
-    // const handleMessage = (message: { type: string; payload: ScanReport }) => {
-    //   if (message.type === 'SCAN_REPORT') {
-    //     setReport(message.payload)
-    //     setIsScanning(false)
-    //   }
-    // }
-    // chrome.runtime.onMessage.addListener(handleMessage)
-    // return () => chrome.runtime.onMessage.removeListener(handleMessage)
   }, [])
 
-  // Tombol Rescan: kirim perintah ke content script buat scan ulang.
-  // Backend akan dengerin pesan 'RESCAN' ini di content.ts-nya.
   const handleRescan = () => {
     setIsScanning(true)
-    // Sementara mock: langsung set report lagi setelah delay singkat
-    // Nanti dihapus kalau backend udah selesai
     setTimeout(() => {
       setReport({ ...MOCK_REPORT, timestamp: Date.now() })
       setIsScanning(false)
     }, 800)
-
-    // TODO: nanti di-uncomment 
-    // chrome.tabs.query({ active: true, currentWindow: true }, (tabs: chrome.tabs.Tab[]) => {
-    //   if (tabs[0]?.id) {
-    //     chrome.tabs.sendMessage(tabs[0].id, { type: 'RESCAN' })
-    //   }
-    // })
   }
 
-  const maxKeywordCount = report
-    ? Math.max(...Object.values(report.matchesByKeyword))
-    : 1
+  const maxKeywordCount = report ? Math.max(...Object.values(report.matchesByKeyword)) : 1
 
   return (
     <div className="popup">
-      {/* Header */}
       <header className="popup-header">
         <div className="popup-logo">
-          <span className="logo-icon">🎰</span>
+          <img className="logo-icon" src={ICONS.detective} alt="Detective icon" />
           <div>
             <h1>Judol Detector</h1>
             <p>IF2211 Strategi Algoritma</p>
@@ -96,7 +73,7 @@ export function PopupApp() {
           onClick={handleRescan}
           disabled={isScanning}
         >
-          {isScanning ? '⟳ Scanning...' : '⟳ Rescan'}
+          {isScanning ? 'Scanning...' : 'Rescan'}
         </button>
       </header>
 
@@ -107,7 +84,6 @@ export function PopupApp() {
         </div>
       ) : (
         <>
-          {/* Total Match */}
           <section className="section-total">
             <div className="total-badge">
               <span className="total-number">{report.totalMatches}</span>
@@ -115,10 +91,6 @@ export function PopupApp() {
             </div>
           </section>
 
-          {/* Bar Chart Keyword:
-              Chart manual pakai div, lebar bar = (count / max) * 100%
-              Tidak pakai library supaya build tetap ringan.
-          */}
           <section className="section-keywords">
             <h2>Perbandingan Keyword</h2>
             <div className="keyword-chart">
@@ -128,21 +100,14 @@ export function PopupApp() {
                   <div key={keyword} className="chart-row">
                     <span className="chart-label">{keyword}</span>
                     <div className="chart-bar-wrap">
-                      <div
-                        className="chart-bar"
-                        style={{ width: `${(count / maxKeywordCount) * 100}%` }}
-                      />
+                      <div className="chart-bar" style={{ width: `${(count / maxKeywordCount) * 100}%` }} />
                     </div>
-                    <span className="chart-count">{count}×</span>
+                    <span className="chart-count">{count}x</span>
                   </div>
                 ))}
             </div>
           </section>
 
-          {/* Statistik Per Algoritma :
-              Menampilkan waktu eksekusi, jumlah match, dan jumlah comparison
-              untuk tiap algoritma (KMP, BM, RegEx, Levenshtein).
-          */}
           <section className="section-stats">
             <h2>Performa Algoritma</h2>
             <div className="algo-grid">
@@ -155,10 +120,19 @@ export function PopupApp() {
                     {stat.algorithm}
                   </div>
                   <div className="algo-detail">
-                    <span>⏱ {formatTime(stat.executionTimeMs)}</span>
-                    <span>✓ {stat.matchCount} match</span>
+                    <span className="stat-line">
+                      <img className="stat-icon" src={ICONS.time} alt="Execution time" />
+                      {formatTime(stat.executionTimeMs)}
+                    </span>
+                    <span className="stat-line">
+                      <img className="stat-icon" src={ICONS.checklist} alt="Match count" />
+                      {stat.matchCount} match
+                    </span>
                     {stat.comparisonCount > 0 && (
-                      <span>↔ {stat.comparisonCount.toLocaleString()} cmp</span>
+                      <span className="stat-line">
+                        <img className="stat-icon" src={ICONS.compareArrows} alt="Comparison count" />
+                        {stat.comparisonCount.toLocaleString()} cmp
+                      </span>
                     )}
                   </div>
                 </div>

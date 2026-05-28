@@ -36,7 +36,10 @@ body {
 }
 
 .logo-icon {
-  font-size: 22px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .popup-logo h1 {
@@ -196,6 +199,19 @@ section h2 {
 .algo-detail span {
   font-size: 10px;
   color: #64748b;
+}
+
+.stat-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stat-icon {
+  width: 11px;
+  height: 11px;
+  filter: brightness(0) invert(1);
+  object-fit: contain;
 }
 
 /* Footer */
