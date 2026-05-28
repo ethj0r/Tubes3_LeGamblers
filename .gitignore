@@ -27,3 +27,12 @@ public/tesseract/lang/
 *.njsproj
 *.sln
 *.sw?
+
+# macOS
+.DS_Store
+
+# Latex
+*.aux
+*.log
+*.out
+*.toc
