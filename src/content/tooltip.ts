@@ -1,4 +1,5 @@
 import { HIGHLIGHT_ATTR } from './highlighter';
+import { IMAGE_FLAG_ATTR } from './imageOverlay';
 
 const TOOLTIP_ID = 'legamblers-tooltip';
 const STYLE_ID = 'legamblers-tooltip-styles';
@@ -67,7 +68,7 @@ export function installTooltip(data: TooltipData): () => void {
   document.body.appendChild(tip);
 
   let current: Element | null = null;
-  const selector = `[${HIGHLIGHT_ATTR}]`;
+  const selector = `[${HIGHLIGHT_ATTR}],[${IMAGE_FLAG_ATTR}]`;
 
   const onOver = (e: Event) => {
     const hit = (e.target as Element)?.closest?.(selector);
