@@ -166,6 +166,10 @@ export async function runContentSearch(options: ContentSearchOptions): Promise<S
   if (initial.matches.length > 0) {
     apply(initial.matches, records);
   }
+  
+  // Install the tooltip for text matches immediately. 
+  // Counts are refreshed at the end once OCR results are in.
+  renderTooltip(initial.report);
 
   let finalReport = initial.report;
 
