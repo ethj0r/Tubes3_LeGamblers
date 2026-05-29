@@ -4,12 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "pnpm copy:tesseract && vite",
+    "build": "pnpm copy:tesseract && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "copy:tesseract": "node scripts/copy-tesseract-assets.mjs"
   },
   "dependencies": {
     "react": "^19.2.6",

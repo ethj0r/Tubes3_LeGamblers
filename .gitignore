@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Tesseract assets
+public/tesseract/worker.min.js
+public/tesseract/core/
+public/tesseract/lang/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

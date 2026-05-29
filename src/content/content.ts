@@ -6,7 +6,7 @@ import { highlightMatches, HIGHLIGHT_ATTR } from './highlighter';
 import { censorMatches, CENSOR_ATTR } from './censorship';
 import { installTooltip } from './tooltip';
 import { collectImageText } from './ocr';
-import { flagMatchedImages, IMAGE_FLAG_ATTR } from './imageOverlay';
+import { flagMatchedImages, IMAGE_FLAG_ATTR, clearImageFlags } from './imageOverlay';
 
 export interface ContentSearchOptions {
   keywords: string[];
@@ -94,24 +94,10 @@ function unwrapAll(selector: string): void {
   }
 }
 
-function removeImageFlags(): void {
-  for (const wrap of Array.from(document.querySelectorAll(`[${IMAGE_FLAG_ATTR}]`))) {
-    const img = wrap.querySelector('img');
-    const parent = wrap.parentNode;
-    if (!parent) continue;
-    if (img) {
-      img.classList.remove('legamblers-image-blur');
-      parent.replaceChild(img, wrap);
-    } else {
-      parent.removeChild(wrap);
-    }
-  }
-}
-
 function clearVisuals(): void {
   unwrapAll(`[${HIGHLIGHT_ATTR}]`);
   unwrapAll(`[${CENSOR_ATTR}]`);
-  removeImageFlags();
+  clearImageFlags();
   document.getElementById('legamblers-tooltip')?.remove();
 }
 
@@ -179,6 +165,7 @@ export async function runContentSearch(options: ContentSearchOptions): Promise<S
       lang: options.ocrLang,
       concurrency: options.ocrConcurrency,
       minSize: options.ocrMinSize,
+      verbose: true,
     });
 
     if (ocr.records.length > 0) {

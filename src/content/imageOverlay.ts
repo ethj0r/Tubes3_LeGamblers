@@ -2,19 +2,42 @@ import type { MatchResult } from '../types';
 import type { OcrRecord } from './ocr';
 
 export const IMAGE_FLAG_ATTR = 'data-legamblers-image-flag';
-const WRAP_CLASS = 'legamblers-image-wrap';
-const IMG_CLASS = 'legamblers-image-blur';
+const IMG_CLASS = 'legamblers-image-flag';
 const BADGE_CLASS = 'legamblers-image-badge';
+const BADGE_ATTR = 'data-legamblers-image-badge';
 const STYLE_ID = 'legamblers-image-flag-styles';
 
 const CSS = `
-.${WRAP_CLASS}{position:relative;display:inline-block;outline:3px solid #dc2626;outline-offset:2px;border-radius:2px}
-.${IMG_CLASS}{filter:blur(8px);transition:filter 180ms;cursor:pointer}
-.${WRAP_CLASS}:hover .${IMG_CLASS}{filter:blur(0)}
-.${BADGE_CLASS}{position:absolute;top:4px;left:4px;background:#dc2626;color:#fff;font:600 11px/1 system-ui,-apple-system,sans-serif;padding:3px 6px;border-radius:3px;pointer-events:none;z-index:2;letter-spacing:.02em}
+img.${IMG_CLASS} {
+  outline: 3px solid #dc2626 !important;
+  outline-offset: 2px !important;
+  filter: blur(8px) !important;
+  transition: filter 180ms ease !important;
+  cursor: pointer !important;
+}
+img.${IMG_CLASS}:hover {
+  filter: blur(0) !important;
+}
+.${BADGE_CLASS} {
+  position: fixed;
+  background: #dc2626;
+  color: #fff;
+  font: 600 11px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  padding: 3px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 2147483646;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
 `;
 
-function injectStyles() {
+const registry = new Map<HTMLImageElement, HTMLElement>();
+let scrollHandlerAttached = false;
+let resizeObserver: ResizeObserver | null = null;
+let rafPending = false;
+
+function injectStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = STYLE_ID;
@@ -22,9 +45,53 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-export function flagMatchedImages(matches: MatchResult[], records: OcrRecord[]): HTMLElement[] {
+function positionBadge(img: HTMLImageElement, badge: HTMLElement): void {
+  const rect = img.getBoundingClientRect();
+  if (
+    rect.width === 0 ||
+    rect.height === 0 ||
+    rect.bottom < 0 ||
+    rect.top > window.innerHeight ||
+    rect.right < 0 ||
+    rect.left > window.innerWidth
+  ) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.style.display = '';
+  badge.style.top = `${rect.top + 4}px`;
+  badge.style.left = `${rect.left + 4}px`;
+}
+
+function repositionAll(): void {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    for (const [img, badge] of registry) {
+      if (!img.isConnected) {
+        badge.remove();
+        registry.delete(img);
+        resizeObserver?.unobserve(img);
+        continue;
+      }
+      positionBadge(img, badge);
+    }
+  });
+}
+
+function ensureGlobalListeners(): void {
+  if (scrollHandlerAttached) return;
+  scrollHandlerAttached = true;
+  window.addEventListener('scroll', repositionAll, { capture: true, passive: true });
+  window.addEventListener('resize', repositionAll, { passive: true });
+  resizeObserver = new ResizeObserver(repositionAll);
+}
+
+export function flagMatchedImages(matches: MatchResult[], records: OcrRecord[]): HTMLImageElement[] {
   if (matches.length === 0 || records.length === 0) return [];
   injectStyles();
+  ensureGlobalListeners();
 
   const byImage = new Map<HTMLImageElement, MatchResult[]>();
   for (const m of matches) {
@@ -36,35 +103,54 @@ export function flagMatchedImages(matches: MatchResult[], records: OcrRecord[]):
     }
   }
 
-  const created: HTMLElement[] = [];
+  const flagged: HTMLImageElement[] = [];
   for (const [img, ms] of byImage) {
-    const el = wrapImage(img, ms);
-    if (el) created.push(el);
+    if (flagImage(img, ms)) flagged.push(img);
   }
-  return created;
+  return flagged;
 }
 
-function wrapImage(img: HTMLImageElement, matches: MatchResult[]): HTMLElement | null {
-  if (img.closest(`.${WRAP_CLASS}`)) return null;
-  const parent = img.parentNode;
-  if (!parent) return null;
+function flagImage(img: HTMLImageElement, matches: MatchResult[]): boolean {
+  if (img.classList.contains(IMG_CLASS)) return false;
 
   const keywords = Array.from(new Set(matches.map((m) => m.keyword)));
 
-  const wrap = document.createElement('span');
-  wrap.className = WRAP_CLASS;
-  wrap.setAttribute(IMAGE_FLAG_ATTR, keywords.join(','));
-  wrap.setAttribute('data-algorithm', matches[0].algorithm);
-  wrap.title = `Konten judi terdeteksi pada gambar: ${keywords.join(', ')}`;
-
-  parent.insertBefore(wrap, img);
   img.classList.add(IMG_CLASS);
-  wrap.appendChild(img);
+  img.setAttribute(IMAGE_FLAG_ATTR, keywords.join(','));
+  img.setAttribute('data-algorithm', matches[0].algorithm);
+  img.title = `Konten judi terdeteksi pada gambar: ${keywords.join(', ')}`;
 
-  const badge = document.createElement('span');
+  const badge = document.createElement('div');
   badge.className = BADGE_CLASS;
+  badge.setAttribute(BADGE_ATTR, '');
   badge.textContent = `judol · ${matches.length}`;
-  wrap.appendChild(badge);
+  document.body.appendChild(badge);
 
-  return wrap;
+  positionBadge(img, badge);
+  registry.set(img, badge);
+  resizeObserver?.observe(img);
+
+  return true;
+}
+
+export function clearImageFlags(): void {
+  for (const [img, badge] of registry) {
+    img.classList.remove(IMG_CLASS);
+    img.removeAttribute(IMAGE_FLAG_ATTR);
+    img.removeAttribute('data-algorithm');
+    img.removeAttribute('title');
+    badge.remove();
+    resizeObserver?.unobserve(img);
+  }
+  registry.clear();
+
+  for (const stray of Array.from(document.querySelectorAll(`img.${IMG_CLASS}`))) {
+    stray.classList.remove(IMG_CLASS);
+    stray.removeAttribute(IMAGE_FLAG_ATTR);
+    stray.removeAttribute('data-algorithm');
+    stray.removeAttribute('title');
+  }
+  for (const badge of Array.from(document.querySelectorAll(`[${BADGE_ATTR}]`))) {
+    badge.remove();
+  }
 }

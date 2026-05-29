@@ -16,6 +16,11 @@
     }
   },
 
+  "background": {
+    "service_worker": "src/background/background.ts",
+    "type": "module"
+  },
+
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
@@ -28,5 +33,12 @@
     "16": "icons/detective.png",
     "48": "icons/detective.png",
     "128": "icons/detective.png"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "matches": ["<all_urls>"],
+      "resources": ["tesseract/*", "tesseract/core/*"]
+    }
+  ]
 }
