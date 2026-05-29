@@ -5,7 +5,7 @@ import { collectPageText } from './domWalker';
 import { highlightMatches, HIGHLIGHT_ATTR } from './highlighter';
 import { censorMatches, CENSOR_ATTR } from './censorship';
 import { installTooltip } from './tooltip';
-import { collectImageText } from './ocr';
+import { collectImageText, type OcrRecord } from './ocr';
 import { flagMatchedImages, IMAGE_FLAG_ATTR, clearImageFlags } from './imageOverlay';
 
 export interface ContentSearchOptions {
@@ -129,6 +129,18 @@ function renderTooltip(report: ScanReport): void {
   });
 }
 
+// Scans a single image's OCR text the moment it's recognized and blurs that image right away
+async function flagImageEagerly(
+  image: HTMLImageElement,
+  text: string,
+  keywords: string[],
+): Promise<void> {
+  const { matches } = await scanText(text, keywords);
+  if (matches.length === 0) return;
+  const record: OcrRecord = { image, text, start: 0, end: text.length };
+  flagMatchedImages(matches, [record]);
+}
+
 async function persistReport(report: ScanReport): Promise<void> {
   if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
   await chrome.storage.local.set({ [REPORT_KEY]: report });
@@ -166,6 +178,7 @@ export async function runContentSearch(options: ContentSearchOptions): Promise<S
       concurrency: options.ocrConcurrency,
       minSize: options.ocrMinSize,
       verbose: true,
+      onImageText: (image, text) => void flagImageEagerly(image, text, options.keywords),
     });
 
     if (ocr.records.length > 0) {
