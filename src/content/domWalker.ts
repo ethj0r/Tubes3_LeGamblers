@@ -4,7 +4,7 @@ export interface TextNodeRecord {
   end: number;
 }
 
-const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'HEAD']);
+const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'HEAD', 'TEXTAREA', 'INPUT']);
 
 export function collectPageText(root: Node = document.body): {
   fullText: string;
