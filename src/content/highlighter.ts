@@ -50,6 +50,10 @@ function wrap(textNode: Text, start: number, end: number, match: MatchResult): H
   mark.className = CLASS;
   mark.setAttribute(HIGHLIGHT_ATTR, match.keyword);
   mark.setAttribute('data-algorithm', match.algorithm);
+  mark.setAttribute('data-legamblers-source', 'dom');
+  if (match.isFuzzy && typeof match.similarity === 'number') {
+    mark.setAttribute('data-similarity', match.similarity.toFixed(3));
+  }
   mark.textContent = value.slice(start, end);
 
   textNode.nodeValue = value.slice(0, start);

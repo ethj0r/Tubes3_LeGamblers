@@ -88,10 +88,20 @@ function ensureGlobalListeners(): void {
   resizeObserver = new ResizeObserver(repositionAll);
 }
 
+const OCR_EXCERPT_MAX = 140;
+
+function truncate(s: string, max: number): string {
+  const flat = s.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? flat.slice(0, max) : flat;
+}
+
 export function flagMatchedImages(matches: MatchResult[], records: OcrRecord[]): HTMLImageElement[] {
   if (matches.length === 0 || records.length === 0) return [];
   injectStyles();
   ensureGlobalListeners();
+
+  const recordByImage = new Map<HTMLImageElement, OcrRecord>();
+  for (const r of records) recordByImage.set(r.image, r);
 
   const byImage = new Map<HTMLImageElement, MatchResult[]>();
   for (const m of matches) {
@@ -105,19 +115,24 @@ export function flagMatchedImages(matches: MatchResult[], records: OcrRecord[]):
 
   const flagged: HTMLImageElement[] = [];
   for (const [img, ms] of byImage) {
-    if (flagImage(img, ms)) flagged.push(img);
+    const ocrText = recordByImage.get(img)?.text ?? '';
+    if (flagImage(img, ms, ocrText)) flagged.push(img);
   }
   return flagged;
 }
 
-function flagImage(img: HTMLImageElement, matches: MatchResult[]): boolean {
+function flagImage(img: HTMLImageElement, matches: MatchResult[], ocrText: string): boolean {
   if (img.classList.contains(IMG_CLASS)) return false;
 
   const keywords = Array.from(new Set(matches.map((m) => m.keyword)));
+  const algorithms = Array.from(new Set(matches.map((m) => m.algorithm)));
+  const excerpt = truncate(ocrText, OCR_EXCERPT_MAX);
 
   img.classList.add(IMG_CLASS);
   img.setAttribute(IMAGE_FLAG_ATTR, keywords.join(','));
-  img.setAttribute('data-algorithm', matches[0].algorithm);
+  img.setAttribute('data-algorithm', algorithms.join(','));
+  img.setAttribute('data-legamblers-source', 'ocr');
+  if (excerpt) img.setAttribute('data-legamblers-ocr-excerpt', excerpt);
   img.title = `Konten judi terdeteksi pada gambar: ${keywords.join(', ')}`;
 
   const badge = document.createElement('div');
@@ -133,22 +148,25 @@ function flagImage(img: HTMLImageElement, matches: MatchResult[]): boolean {
   return true;
 }
 
+function stripImgAttrs(img: Element): void {
+  img.classList.remove(IMG_CLASS);
+  img.removeAttribute(IMAGE_FLAG_ATTR);
+  img.removeAttribute('data-algorithm');
+  img.removeAttribute('data-legamblers-source');
+  img.removeAttribute('data-legamblers-ocr-excerpt');
+  img.removeAttribute('title');
+}
+
 export function clearImageFlags(): void {
   for (const [img, badge] of registry) {
-    img.classList.remove(IMG_CLASS);
-    img.removeAttribute(IMAGE_FLAG_ATTR);
-    img.removeAttribute('data-algorithm');
-    img.removeAttribute('title');
+    stripImgAttrs(img);
     badge.remove();
     resizeObserver?.unobserve(img);
   }
   registry.clear();
 
   for (const stray of Array.from(document.querySelectorAll(`img.${IMG_CLASS}`))) {
-    stray.classList.remove(IMG_CLASS);
-    stray.removeAttribute(IMAGE_FLAG_ATTR);
-    stray.removeAttribute('data-algorithm');
-    stray.removeAttribute('title');
+    stripImgAttrs(stray);
   }
   for (const badge of Array.from(document.querySelectorAll(`[${BADGE_ATTR}]`))) {
     badge.remove();

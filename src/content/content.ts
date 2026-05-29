@@ -116,17 +116,7 @@ function partitionMatches(
 
 function renderTooltip(report: ScanReport): void {
   if (report.totalMatches === 0) return;
-  const keywords = Object.keys(report.matchesByKeyword);
-  const totalComparisons = report.stats.reduce((s, st) => s + st.comparisonCount, 0);
-  const totalTime = report.stats.reduce((s, st) => s + st.executionTimeMs, 0);
-  const topAlgo = [...report.stats].sort((a, b) => b.matchCount - a.matchCount)[0];
-  installTooltip({
-    algorithm: topAlgo?.algorithm ?? 'KMP',
-    keywords,
-    appearances: report.totalMatches,
-    comparisons: totalComparisons,
-    executionTimeMs: totalTime,
-  });
+  installTooltip(report);
 }
 
 // Scans a single image's OCR text the moment it's recognized and blurs that image right away

@@ -52,6 +52,11 @@ function wrap(textNode: Text, start: number, end: number, match: MatchResult): H
   const span = document.createElement('span');
   span.className = CLASS;
   span.setAttribute(CENSOR_ATTR, match.keyword);
+  span.setAttribute('data-algorithm', match.algorithm);
+  span.setAttribute('data-legamblers-source', 'dom');
+  if (match.isFuzzy && typeof match.similarity === 'number') {
+    span.setAttribute('data-similarity', match.similarity.toFixed(3));
+  }
   span.textContent = value.slice(start, end);
 
   textNode.nodeValue = value.slice(0, start);
