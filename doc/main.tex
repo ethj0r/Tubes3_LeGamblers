@@ -169,7 +169,7 @@ objektif.
 
 % =======================================================================
 \newpage
-\section{Landasan Teori}
+\section{Theoritical Background}
 
 \subsection{Algoritma Knuth-Morris-Pratt (KMP)}
 KMP pada dasarnya merupakan satu observasi sederhana pada matching brute-force. Jika pencarian gagal di tengah jalan, sebetulnya kita
@@ -268,7 +268,7 @@ yang ditemukan.
 
 \textit{Failure link} di sini mirip dengan border function pada KMP. Kalau mismatch terjadi di sebuah simpul, automaton tidak balik
 ke akar, tapi melompat ke simpul terdalam yang merepresentasikan \textit{proper suffix} terpanjang dari string yang sudah
-dicocokkan sejauh ini~\cite{ahoCorasickWiki}. Contoh struktur automatonnya dapat dilihat pada Gambar~\ref{fig:aho-corasick}.
+dicocokkan sejauh ini~\cite{ahoCorasickWiki}. Contoh struktur automatonnya dapat dilihat pada Figure~\ref{fig:aho-corasick}.
 
 \begin{figure}[H]
     \centering
@@ -354,7 +354,7 @@ umumnya terdiri dari beberapa komponen utama.
 
 Ketiga komponen ini berkomunikasi lewat API \texttt{chrome.runtime}, biasanya pakai pesan (\texttt{sendMessage} dan
 \texttt{onMessage}) atau lewat \texttt{chrome.storage} kalau perlu berbagi \textit{state}. Arsitektur Judol Detector secara umum
-tergambar pada Gambar~\ref{fig:architecture}.
+tergambar pada Figure~\ref{fig:architecture}.
 
 \begin{figure}[H]
     \centering
@@ -391,13 +391,567 @@ worker} memelihara \textit{state} global seperti status \textit{blur} antar tab.
 \newpage
 \section{Problem Analysis \& Solution Design}
 
-% =======================================================================
-\newpage
-\section{Implementation \& Testing}
+\subsection{Langkah-langkah Pemecahan Masalah}
+
+Intinya adalah memutuskan, dengan cepat dan tepat, apakah teks yang muncul di sebuah halaman web mengandung konten judol.
+Untuk hal itu, kami pecah alurnya menjadi lima tahap yang berjalan berurutan, dari saat page selesai dimuat sampai
+informasinya sampai ke pengguna. Kelima tahap tersebut diringkas sebagai berikut.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=0.55cm,
+        stage/.style={rectangle, draw, rounded corners=2pt, minimum width=12cm, minimum height=1cm, align=center, font=\small},
+        accent/.style={stage, fill=accent!12},
+        arrow/.style={->, >=stealth, thick}
+    ]
+        \node[stage] (s1) {1.~\textbf{Trigger}: \texttt{DOMContentLoaded} dan \texttt{MutationObserver} untuk konten dinamis};
+        \node[stage, below=of s1] (s2) {2.~\textbf{DOM Walker}: kumpulkan \texttt{TextNode} yang relevan, lewati
+        \texttt{<script>}, \texttt{<style>}, dll.};
+        \node[accent, below=of s2] (s3) {3.~\textbf{Pipeline pencocokan tiga tahap}: Exact $\to$ RegEx $\to$ Fuzzy};
+        \node[stage, below=of s3] (s4) {4.~\textbf{Highlight + Tooltip}: bungkus dengan \texttt{<span>} berwarna sesuai
+        algoritma};
+        \node[stage, below=of s4] (s5) {5.~\textbf{Statistik}: kirim \texttt{ScanReport} ke popup via
+        \texttt{chrome.runtime.sendMessage}};
+        \draw[arrow] (s1) -- (s2);
+        \draw[arrow] (s2) -- (s3);
+        \draw[arrow] (s3) -- (s4);
+        \draw[arrow] (s4) -- (s5);
+    \end{tikzpicture}
+    \caption{Lima tahap pemecahan masalah Judol Detector, dari \textit{trigger} sampai laporan akhir di popup. Tahap ketiga
+    diperdetail pada Figure~\ref{fig:pipeline-detail}.}
+    \label{fig:problem-flow}
+\end{figure}
+
+Tahap pertama adalah \textit{trigger}. Begitu DOM selesai dimuat, \textit{content script} dipanggil dan memulai pemindaian.
+Konten yang muncul belakangan seperti hasil \textit{infinite scroll} atau \textit{lazy load} ditangani oleh
+\texttt{MutationObserver} yang otomatis memicu pemindaian ulang pada \textit{subtree} baru.
+
+Tahap kedua adalah penelusuran DOM. DOM walker menelusuri seluruh \texttt{TextNode} di halaman, mengumpulkan teksnya, lalu
+melewati elemen yang tidak relevan seperti \texttt{<script>}, \texttt{<style>}, \texttt{<noscript>}, dan elemen yang sudah pernah
+ditandai. Hasilnya adalah daftar teks yang siap dicocokkan, lengkap dengan referensi ke node aslinya supaya highlighter tahu di
+mana harus membungkus \texttt{<span>} nantinya.
+
+Tahap ketiga adalah pipeline pencocokan tiga lapis yang jadi inti deteksi. 
+
+Tahap keempat adalah pemasangan highlight dan tooltip. Tiap kemunculan yang lolos pipeline dibungkus dengan \texttt{<span>}
+berwarna berbeda per algoritma penemu. Saat pengguna meng-hover \textit{span} tersebut, tooltip kustom muncul dan menampilkan
+kata kunci, algoritma penangkap, jumlah kemunculan, serta waktu eksekusi.
+
+Tahap kelima adalah laporan ke popup. Setelah pemindaian selesai, content script mengirim \texttt{ScanReport} berisi seluruh
+statistik melalui \texttt{chrome.runtime.sendMessage}. Popup menampilkan total kata kunci yang ditemukan, perbandingan jumlah
+\textit{match} dan jumlah perbandingan per algoritma, serta grafik perbandingan waktu eksekusi.
+
+\subsection{Pipeline Pencocokan Tiga Tahap}
+\label{sec:matching-pipeline}
+
+Pipeline pencocokan tiga tahap ini yang melakukan kerja deteksi yang sebenarnya. Tiap tahap melengkapi tahap sebelumnya seperti 
+\textit{exact} menangkap kata kunci yang sudah dikenal, RegEx menambah penangkapan nama berpola \texttt{<kata><angka>} yang
+belum dikenal, dan \textit{fuzzy} menangkap kata kunci yang mengalami penyamaran karakter.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=0.7cm and 0.7cm,
+        box/.style={rectangle, draw, rounded corners=2pt, minimum width=5cm, minimum height=1.3cm, align=center, font=\small},
+        exact/.style={box, fill=blue!10},
+        regex/.style={box, fill=orange!15},
+        fuzzy/.style={box, fill=green!12},
+        side/.style={font=\scriptsize, align=left, text width=6cm},
+        arrow/.style={->, >=stealth, thick}
+    ]
+        \node[box, fill=gray!10] (input) {Teks DOM (lowercased)};
+        \node[exact, below=of input] (exact) {\textbf{1. Exact}\\KMP $\Vert$ BM vs \texttt{keywords.txt}};
+        \node[regex, below=of exact] (regex) {\textbf{2. RegEx Discovery}\\
+        \texttt{\textbackslash{}b\textbackslash{}w\{2,\}\textbackslash{}d\{2,\}\textbackslash{}b}};
+        \node[fuzzy, below=of regex] (fuzzy) {\textbf{3. Fuzzy Matching}\\
+        Weighted Levenshtein\\(hanya untuk kata kunci yang \textit{miss})};
+        \node[box, fill=gray!10, below=of fuzzy] (merge) {\textbf{Merge + Dedupe}};
+
+        \draw[arrow] (input) -- (exact);
+        \draw[arrow] (exact) -- (regex);
+        \draw[arrow] (regex) -- (fuzzy);
+        \draw[arrow] (fuzzy) -- (merge);
+
+        \node[side, right=of exact] {KMP dan BM jalan paralel,\\ \textit{hits} di-dedup tapi statistik\\dilaporkan terpisah};
+        \node[side, right=of regex] {Tangkap nama berpola \texttt{<kata><angka>}\\(Ajo89, MAXWIN234) walau belum ada\\di
+        \texttt{keywords.txt}};
+        \node[side, right=of fuzzy] {Tangani penyamaran karakter\\(O$\leftrightarrow$0, A$\leftrightarrow$4, dst.)\\dengan bobot
+        visual};
+    \end{tikzpicture}
+    \caption{Detail pipeline tiga tahap. \textit{Exact} menangani kata kunci dasar, RegEx menambah penemuan nama baru, dan
+    \textit{fuzzy} menjaring penyamaran karakter. Hasil semua tahap digabung dan di-dedup sebelum dilanjutkan ke highlighter.}
+    \label{fig:pipeline-detail}
+\end{figure}
+
+Pada tahap \textit{exact}, KMP dan Boyer-Moore dijalankan paralel terhadap seluruh kata kunci di \texttt{keywords.txt}. Karena
+keduanya seharusnya menemukan kemunculan yang sama untuk pola yang sama, hasilnya di-dedup di orchestrator. Walaupun begitu,
+statistik per algoritma (jumlah match, comparison count, waktu eksekusi) tetap di-report terpisah supaya bisa dibandingkan secara
+objektif nantiny.
+
+Pada tahap RegEx, satu pola \verb|\b\w{2,}\d{2,}\b| menangkap kombinasi minimal dua huruf diikuti minimal dua angka, dibatasi
+\textit{word boundary}. Tahap ini tidak menyaring berdasarkan kata kunci, melainkan menemukan nama-nama berpola \texttt{<kata><angka>}
+secara umum, jadi nama baru seperti misal \texttt{Ajo89} atau \texttt{MAXWIN234} tetap tertangkap walau belum pernah didaftarkan.
+
+Pada tahap \textit{fuzzy}, Weighted Levenshtein hanya dipanggil untuk kata kunci yang tidak ketemu di tahap eksak (\textit{miss
+list}). Tiap token di teks dicocokkan dengan kata kunci yang \textit{miss}, dan kemunculan ditandai \texttt{isFuzzy = true} jika
+skor kemiripannya di atas \textit{threshold} 0.7.
+
+\subsection{Pemetaan Masalah ke Elemen KMP dan Boyer-Moore}
+
+Sebelum pipeline jalan, persoalan deteksi judol harus dipetakan ke elemen-elemen klasik string matching. Untuk KMP dan
+Boyer-Moore, pemetaannya diringkas pada Tabel~\ref{tab:kmp-bm-mapping}. Karena tipe input dan output kedua algoritma identik,
+\textit{orchestrator} bisa langsung memanggil keduanya untuk satu pola dan membandingkan statistiknya.
+
+\begin{table}[H]
+    \centering
+    \caption{Pemetaan masalah deteksi judol ke elemen-elemen algoritma KMP dan Boyer-Moore.}
+    \label{tab:kmp-bm-mapping}
+    \begin{tabularx}{\textwidth}{p{3.6cm}|X|X}
+        \toprule
+        \textbf{Elemen} & \textbf{KMP} & \textbf{Boyer-Moore} \\
+        \midrule
+        Teks input $T$ & Teks dari satu \texttt{TextNode}, sudah dinormalisasi ke lowercase & Sama \\
+        Pola $P$ & Satu kata kunci dari \texttt{keywords.txt} (lowercased) & Sama \\
+        \textit{Preprocessing} & Border function $b[0..m-1]$, biaya $O(m)$ & Last occurrence table $\lambda[c]$ untuk tiap
+        karakter $c$ pada $\Sigma$ \\
+        Arah perbandingan & Kiri ke kanan & Kanan ke kiri \\
+        Aksi saat mismatch di indeks $i$ & Pointer pola pindah ke $b[i-1]$, pointer teks tetap & Geseran
+        $= \max(1, i - \lambda[c])$ \\
+        Aksi saat match penuh & Geser satu langkah (\textit{overlap} diizinkan) & Sama \\
+        Comparison count & Akumulatif sejak awal pemanggilan, termasuk saat membangun tabel & Sama \\
+        Output & \texttt{MatchResult[]} berisi posisi, keyword, dan \texttt{comparisonCount} & Sama, dengan label algoritma BM \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Yang paling penting, kedua algoritma dipanggil untuk \textit{tiap} kata kunci secara terpisah. Untuk daftar berisi $K$ kata
+kunci, KMP dan BM masing-masing dipanggil $K$ kali, dengan \textit{counter} di-reset di awal tiap pemanggilan. Saat sebuah
+kemunculan ditemukan, pointer pola hanya digeser satu langkah ke kanan supaya kemunculan yang \textit{overlapping} (misalnya
+\texttt{ababab} terhadap pola \texttt{abab}) tetap tertangkap.
+
+\subsection{Fitur Fungsional dan Arsitektur}
+
+Fitur fungsional Judol Detector dibangun di sekitar pipeline pencocokan tadi.
+
+\begin{itemize}
+    \item Pemindaian otomatis saat halaman selesai dimuat, dengan pemicu ulang untuk konten dinamis.
+    \item Highlight visual pada elemen yang mengandung kata kunci, warna berbeda per algoritma penemu.
+    \item Tooltip kustom saat \textit{hover}: menampilkan keyword, algoritma, jumlah kemunculan, dan waktu eksekusi.
+    \item Popup statistik \textit{realtime}: total kata kunci, perbandingan match dan comparison count per algoritma, dan grafik
+    perbandingan waktu eksekusi.
+    \item Tombol \textit{rescan} dan \textit{toggle blur} di popup.
+    \item Sensor visual otomatis (\textit{blur}) untuk elemen yang teridentifikasi, dengan toggle on/off.
+    \item OCR pada \texttt{<img>} via Tesseract.js untuk menangkap kata kunci yang disembunyikan di gambar.
+\end{itemize}
+
+Secara arsitektur, fitur-fitur tersebut terbagi ke dalam tiga komponen utama Manifest V3 seperti yang sudah dibahas di Bab~2.
+Figure~\ref{fig:detailed-arch} memperlihatkan rincian internalnya, terutama pada \textit{content script} yang menjadi pusat
+aktivitas pemindaian.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        box/.style={rectangle, draw, rounded corners=2pt, font=\small, minimum width=3cm, minimum height=0.9cm,
+            align=center},
+        algs/.style={rectangle, draw, font=\scriptsize, minimum width=3.4cm, minimum height=0.7cm, align=center,
+            fill=blue!8},
+        ext/.style={box, fill=gray!12},
+        chrome/.style={box, fill=accent!12},
+        arrow/.style={->, >=stealth, semithick},
+        lbl/.style={font=\scriptsize}
+    ]
+        % LEFT column: external sources
+        \node[ext] (page) at (-5.5,  3)   {Halaman Web\\(DOM)};
+        \node[ext] (kw)   at (-5.5,  0.5) {keywords.txt};
+        \node[ext] (img)  at (-5.5, -2.5) {\texttt{<img>} elements};
+
+        % MIDDLE column: content script modules
+        \node[box]  (walker)  at (0,  3)    {DOM Walker};
+        \node[box]  (orch)    at (0,  1.5)  {Matcher Orchestrator};
+        \node[algs] (algrow)  at (0,  0.25) {KMP $\,\Vert\,$ BM $\,\Vert\,$ RegEx $\,\Vert\,$ Lev $\,\Vert\,$ AC $\,\Vert\,$ RK};
+        \node[box]  (hl)      at (0, -1)    {Highlighter + Tooltip};
+        \node[box]  (blur)    at (0, -2.5)  {Blur Censor};
+        \node[box]  (tess)    at (0, -4)    {Tesseract OCR};
+
+        % RIGHT column: chrome runtime
+        \node[chrome] (sw)    at (5,  1.5) {Service Worker\\\textit{state global}};
+        \node[chrome] (popup) at (5, -0.3) {Popup UI\\\textit{statistik, toggle}};
+
+        % External -> content script
+        \draw[arrow] (page.east) -- node[lbl, above] {text} (walker.west);
+        \draw[arrow] (kw.east)   -- node[lbl, above, sloped] {load}   (orch.west);
+        \draw[arrow] (img.east)  -- node[lbl, above, sloped] {pixels} (tess.west);
+
+        % Inside content script
+        \draw[arrow] (walker) -- (orch);
+        \draw[arrow] (orch)   -- (algrow);
+        \draw[arrow] (algrow) -- (hl);
+        \draw[arrow] (hl)     -- (blur);
+        \draw[arrow] (tess.east) -- ++(0.4, 0) |- (orch.south east);
+        \node[lbl, right] at (1.95, -1.5) {OCR text};
+
+        % Content script <-> chrome runtime
+        \draw[arrow] (orch.east) -- node[lbl, above] {ScanReport} (sw.west);
+        \draw[arrow] (sw) -- (popup);
+        \draw[arrow] (popup.east) -- ++(0.4, 0) |- (walker.east);
+        \node[lbl, right] at (6.95, 1.5) {rescan / toggle};
+
+        % Content script container
+        \begin{scope}[on background layer]
+            \node[draw, dashed, rounded corners=3pt,
+                  fit=(walker)(orch)(algrow)(hl)(blur)(tess),
+                  inner sep=15pt,
+                  label={[font=\small\itshape]above:Content Script}] {};
+        \end{scope}
+    \end{tikzpicture}
+    \caption{Arsitektur internal Judol Detector. \textit{Content script} merangkum DOM walker, \textit{matcher orchestrator}
+    yang memanggil enam algoritma matching, modul \textit{highlighter + tooltip}, \textit{blur censor}, dan Tesseract OCR.
+    \textit{Service worker} memelihara \textit{state} global, sementara popup menampilkan statistik beserta tombol kontrol.}
+    \label{fig:detailed-arch}
+\end{figure}
+
+\subsection{Contoh Ilustrasi Kasus}
+
+Untuk memperlihatkan bagaimana pipeline bekerja secara konkret, kami ambil contoh teks dari halaman pencarian Google berikut.
+
+\begin{lstlisting}[language=, basicstyle=\ttfamily\small, frame=single, backgroundcolor=\color{codebg}]
+Ajo89: Situs Slot Gacor Gampang Menang Link Rtp Hari Ini
+Ajo89 adalah situs slot gacor dengan deposit rendah.
+Slot Thailand Situs Slot Gacor Anti Rungkat - H0KI88
+\end{lstlisting}
+
+Misalkan daftar kata kunci kami berisi \texttt{slot gacor}, \texttt{slot}, \texttt{gacor}, \texttt{judi}, dan \texttt{HOKI88},
+dan \textit{threshold} fuzzy diatur 0.7. Hasil tiap tahap pipeline pada teks di atas tampak pada
+Tabel~\ref{tab:case-trace}.
+
+\begin{table}[H]
+    \centering
+    \caption{\textit{Trace} pipeline untuk teks contoh di atas. Angka comparison count bersifat ilustratif.}
+    \label{tab:case-trace}
+    \begin{tabularx}{\textwidth}{p{2.4cm}|X|p{2cm}|p{3cm}}
+        \toprule
+        \textbf{Tahap} & \textbf{Kemunculan yang tertangkap} & \textbf{Total} & \textbf{Catatan} \\
+        \midrule
+        Exact (KMP) & \texttt{slot gacor} (3$\times$), \texttt{slot} (5$\times$), \texttt{gacor} (3$\times$) & 11 &
+        Comparison count $\approx$ 312 \\
+        Exact (BM) & sama dengan KMP & 11 & Comparison count $\approx$ 198 (lebih efisien karena pola panjang) \\
+        RegEx & \texttt{Ajo89} (2$\times$), \texttt{H0KI88} (1$\times$) & 3 & Tangkapan murni dari pola \texttt{<kata><angka>} \\
+        Fuzzy & \texttt{H0KI88} $\to$ \texttt{HOKI88} & 1 & Similarity $\approx$ 0.92, di atas \textit{threshold} \\
+        \midrule
+        Hasil akhir & Setelah \textit{dedup} KMP/BM dan overlap RegEx/Fuzzy & 14 unik &
+        Highlighter membungkus 14 lokasi DOM \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Di sini, thap eksak menangkap kata kunci yang sudah dikenal, tahap RegEx menemukan \texttt{Ajo89} yang
+belum pernah masuk daftar, dan tahap \textit{fuzzy} menangkap penyamaran \texttt{H0KI88}. Walaupun \texttt{H0KI88} juga tertangkap
+RegEx, label algoritmanya tetap dibawa terpisah, RegEx melaporkannya sebagai \textit{discovery hit}, fuzzy melaporkannya sebagai
+\textit{match} dari kata kunci \texttt{HOKI88}. Saat \textit{toggle blur} aktif, seluruh elemen yang teridentifikasi akan
+di-blur sampai pengguna meng-hover atau mematikan toggle dari popup.
 
 % =======================================================================
 \newpage
-\section{Conclusion \& Suggestion}
+\section{Implementasi dan Pengujian}
+
+\subsection{Spesifikasi Teknis Program}
+
+Judol Detector dibangun di atas \textit{Vite 8} dengan \textit{TypeScript 6} (mode \texttt{strict} dengan
+\texttt{verbatim\allowbreak{}ModuleSyntax}). Popup UI memakai \textit{React 19}, sedangkan bundling sebagai ekstensi Chromium
+ditangani oleh plugin \texttt{@crxjs/\allowbreak{}vite-plugin}. Unit test untuk modul algoritma memakai \textit{Vitest 4} pada
+lingkungan Node, sementara manajemen \textit{dependency} memakai \textit{pnpm} dengan lockfile yang ikut di-commit. Berkas
+konfigurasi ekstensi \texttt{public/\allowbreak{}manifest.json} mendeklarasikan permission dan komponen Manifest V3.
+
+Lima kontrak data lintas modul dirumuskan pada \texttt{src/types/index.ts}, yang isinya tampak pada Listing~\ref{lst:types}.
+Kontrak ini sengaja dipatok di awal proyek supaya tiap orang bisa kerja paralel tanpa saling tunggu, dan supaya unit test
+algoritma bisa diuji secara terpisah dari DOM.
+
+\begin{lstlisting}[language=Java, caption={Kontrak data lintas modul (\texttt{src/types/index.ts}).}, label={lst:types},
+    basicstyle=\ttfamily\footnotesize]
+export type AlgorithmName =
+  'KMP' | 'BoyerMoore' | 'RegEx' | 'Levenshtein' | 'AhoCorasick' | 'RabinKarp';
+
+export interface MatchResult {
+  keyword: string;
+  matchedText: string;
+  algorithm: AlgorithmName;
+  startIndex: number;
+  endIndex: number;
+  comparisonCount: number;
+  isFuzzy: boolean;
+  similarity?: number;
+}
+
+export interface AlgorithmStats {
+  algorithm: AlgorithmName;
+  executionTimeMs: number;
+  matchCount: number;
+  comparisonCount: number;
+}
+
+export interface ScanReport {
+  totalMatches: number;
+  matchesByKeyword: Record<string, number>;
+  stats: AlgorithmStats[];
+  timestamp: number;
+}
+
+export interface PatternMatcher {
+  name: AlgorithmName;
+  search(text: string, patterns: string[]): MatchResult[];
+}
+\end{lstlisting}
+
+Pembagian modul utama dan tanggung jawabnya diringkas pada Tabel~\ref{tab:modules}. Modul dipecah berdasarkan tanggung jawab,
+bukan berdasarkan komponen Manifest V3, supaya tiap algoritma bisa diuji terpisah dari DOM dan dari popup.
+
+\begin{table}[H]
+    \centering
+    \caption{Modul utama Judol Detector dan tanggung jawabnya.}
+    \label{tab:modules}
+    \renewcommand{\arraystretch}{1.15}
+    \begin{tabularx}{\textwidth}{>{\ttfamily\small\raggedright\arraybackslash}p{4.8cm}|X}
+        \toprule
+        \textnormal{\textbf{Modul}} & \textbf{Tanggung jawab} \\
+        \midrule
+        types/\allowbreak index.ts & Kontrak data lintas modul (\texttt{MatchResult}, \texttt{AlgorithmStats},
+        \texttt{ScanReport}, \texttt{PatternMatcher}). \\
+        algorithms/\allowbreak kmp.ts & Implementasi KMP \textit{from scratch} dengan \textit{border function} dan
+        \textit{comparison counting}. \\
+        algorithms/\allowbreak boyerMoore.ts & Implementasi Boyer-Moore dengan \textit{last occurrence table} (heuristik
+        \textit{bad character}). \\
+        algorithms/\allowbreak regex.ts & Pola \texttt{<kata><angka>} dan \textit{discovery layer}. \\
+        algorithms/\allowbreak levenshtein.ts & Weighted Levenshtein dengan tabel bobot visual-similarity dan threshold. \\
+        algorithms/\allowbreak ahoCorasick.ts & Implementasi Aho-Corasick (bonus). \\
+        algorithms/\allowbreak rabinKarp.ts & Implementasi Rabin-Karp dengan \textit{rolling hash} (bonus). \\
+        algorithms/\allowbreak keywordLoader.ts & Membaca \texttt{keywords.txt} dan mengubahnya jadi daftar pola. \\
+        algorithms/\allowbreak matcherOrchestrator.ts & Menggabungkan pipeline tiga tahap, mendedup hits, mengumpulkan
+        \textit{stats} per algoritma. \\
+        content/\allowbreak domWalker.ts & Menelusuri DOM dan mengumpulkan \texttt{TextNode}. \\
+        content/\allowbreak highlighter.ts & Membungkus \textit{match} dengan \texttt{<span>}, plus
+        \texttt{clearHighlights()}. \\
+        content/\allowbreak tooltip.ts & Tooltip kustom yang muncul saat \textit{hover}. \\
+        content/\allowbreak content.ts & \textit{Entry point} content script, hook ke \texttt{DOMContentLoaded} dan
+        \texttt{MutationObserver}. \\
+        popup/ & UI popup berbasis React: statistik, grafik, tombol \textit{rescan} dan \textit{toggle blur}. \\
+        background.ts & \textit{Service worker} Manifest V3: penyimpan \textit{state} global antar tab. \\
+        public/\allowbreak manifest.json & Manifest ekstensi (nama, versi, permission, daftar komponen). \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Tata Cara Penggunaan Ekstensi}
+
+Alur penggunaan ekstensi dari instalasi sampai melihat statistik tergambar pada Gambar~\ref{fig:user-journey}. Karena ekstensi
+berjalan otomatis begitu halaman dimuat, pengguna sebetulnya tidak perlu interaksi tambahan untuk memulai pemindaian, namun
+masih bisa membuka popup kalau ingin melihat statistik atau mengganti pengaturan.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=0.25cm,
+        journeystep/.style={rectangle, draw, rounded corners=2pt, font=\scriptsize, minimum width=2.3cm, minimum height=2.5cm,
+            align=center, fill=gray!5, text width=2.05cm},
+        arrow/.style={->, >=stealth, semithick, gray!60}
+    ]
+        \node[journeystep] (s1) {\textbf{1.~Install}\\[3pt] Buka \textit{chrome://\allowbreak{}extensions}, aktifkan Developer mode,
+        Load unpacked $\to$ folder \texttt{dist/}};
+        \node[journeystep, right=of s1] (s2) {\textbf{2.~Buka halaman}\\[3pt] Navigasi ke halaman web target yang diduga memuat
+        konten judol};
+        \node[journeystep, right=of s2] (s3) {\textbf{3.~Auto-scan}\\[3pt] Begitu DOM siap, \textit{content script} otomatis memulai
+        pemindaian};
+        \node[journeystep, right=of s3] (s4) {\textbf{4.~Highlight}\\[3pt] Kata kunci dibungkus \texttt{<span>} berwarna sesuai
+        algoritma penemu};
+        \node[journeystep, right=of s4] (s5) {\textbf{5.~Hover}\\[3pt] Tooltip muncul: kata kunci, algoritma, jumlah kemunculan,
+        waktu eksekusi};
+        \node[journeystep, right=of s5] (s6) {\textbf{6.~Popup}\\[3pt] Klik ikon $\to$ statistik per algoritma, tombol
+        \textit{rescan}, \textit{toggle blur}};
+
+        \draw[arrow] (s1) -- (s2);
+        \draw[arrow] (s2) -- (s3);
+        \draw[arrow] (s3) -- (s4);
+        \draw[arrow] (s4) -- (s5);
+        \draw[arrow] (s5) -- (s6);
+    \end{tikzpicture}
+    \caption{Tata cara penggunaan Judol Detector, dari instalasi sampai melihat statistik di popup. Pemindaian berjalan otomatis,
+    interaksi pengguna baru diperlukan saat ingin melihat detail (hover) atau ringkasan (popup).}
+    \label{fig:user-journey}
+\end{figure}
+
+Tombol \textit{rescan} di popup berguna untuk halaman yang kontennya berubah dinamis dan belum sempat ter-deteksi oleh
+\texttt{MutationObserver}. \textit{Toggle blur} mengubah \textit{state} global di \textit{service worker} dan langsung
+berimbas ke semua tab yang sedang terbuka. Warna highlight per algoritma sengaja dibedakan supaya pengguna bisa melihat secara
+langsung kontribusi tiap algoritma terhadap deteksi.
+
+\subsection{Hasil Pengujian}
+
+Pengujian dilakukan dengan lima kasus yang memvariasikan jenis halaman dan jenis kemunculan kata kunci. Untuk tiap kasus,
+ekstensi dijalankan dengan \textit{threshold fuzzy} 0.7 dan daftar kata kunci yang sama (\texttt{keywords.txt} versi yang
+di-commit). Browser yang digunakan adalah Google Chrome versi stabil pada platform yang konsisten antar pengujian.
+
+\subsubsection{Kasus 1: Hasil Pencarian Google dengan Kata Kunci Judol}
+
+Halaman: hasil pencarian Google untuk kata kunci ``slot gacor''. Banyak situs judol muncul di SERP dengan nama berpola
+\texttt{<kata><angka>}, jadi kasus ini menguji tahap exact (KMP, BM) sekaligus tahap RegEx pada konten kepadatan tinggi.
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case1-page.png}
+    \caption{Kasus 1: hasil pencarian Google dengan highlight aktif. \textit{Screenshot disiapkan: halaman SERP dengan beberapa
+    judul situs judol yang sudah di-highlight, tooltip terlihat saat hover pada salah satu hit.}}
+    \label{fig:case1-page}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case1-popup.png}
+    \caption{Kasus 1: popup ekstensi dengan statistik per algoritma. \textit{Screenshot disiapkan: popup yang menampilkan total
+    match, jumlah match dan comparison count per algoritma, dan grafik perbandingan waktu eksekusi.}}
+    \label{fig:case1-popup}
+\end{figure}
+
+\subsubsection{Kasus 2: Komentar Spam Judol pada Halaman Video}
+
+Halaman: kolom komentar video YouTube atau forum publik yang terkenal sering disisipi komentar judol. Kasus ini menguji
+DOM walker pada struktur yang dalam dan banyak \texttt{TextNode}, dengan kemunculan kata kunci tersebar dan diselingi
+karakter non-ASCII.
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case2-page.png}
+    \caption{Kasus 2: kolom komentar dengan highlight pada beberapa komentar berisi kata kunci judol. \textit{Screenshot:
+    bagian komentar dengan minimal tiga highlight, tooltip aktif pada salah satunya.}}
+    \label{fig:case2-page}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case2-popup.png}
+    \caption{Kasus 2: popup dengan statistik. \textit{Screenshot: popup menampilkan distribusi kata kunci dan perbandingan
+    waktu antar algoritma.}}
+    \label{fig:case2-popup}
+\end{figure}
+
+\subsubsection{Kasus 3: Halaman Situs Judol Langsung}
+
+Halaman: salah satu situs berpola \texttt{<kata><angka>} (misalnya halaman utama GACOR99 atau MAXWIN88) yang isinya didominasi
+konten judi. Kasus ini menguji kemampuan ekstensi pada kepadatan match yang sangat tinggi, sekaligus mengukur dampak performa
+saat hampir setiap kalimat memicu match.
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case3-page.png}
+    \caption{Kasus 3: situs judol dengan hampir seluruh teks ter-highlight. \textit{Screenshot: tampilan halaman utama situs
+    judol dengan highlight padat, sertakan juga area yang sudah di-blur kalau \textit{toggle blur} aktif.}}
+    \label{fig:case3-page}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case3-popup.png}
+    \caption{Kasus 3: popup dengan statistik kepadatan tinggi. \textit{Screenshot: popup yang menampilkan total match jauh
+    lebih tinggi dari kasus lainnya, perhatian utama pada \textit{comparison count}.}}
+    \label{fig:case3-popup}
+\end{figure}
+
+\subsubsection{Kasus 4: Halaman dengan Penyamaran Karakter Visual}
+
+Halaman: halaman yang kontennya sengaja memakai substitusi karakter (\texttt{H0KI88}, \texttt{Gacor999} dengan Unicode
+\texttt{a} yang berbeda, \texttt{SL0T} bukan \texttt{SLOT}). Kasus ini fokus menguji tahap fuzzy (Weighted Levenshtein) yang
+seharusnya tetap menangkap kemunculan walau exact dan RegEx gagal.
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case4-page.png}
+    \caption{Kasus 4: halaman dengan penyamaran karakter, highlight muncul dari hasil fuzzy match. \textit{Screenshot: tooltip
+    aktif pada salah satu hit fuzzy, menampilkan \texttt{algorithm: Levenshtein} dan skor similarity.}}
+    \label{fig:case4-page}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case4-popup.png}
+    \caption{Kasus 4: popup memperlihatkan kontribusi tahap fuzzy. \textit{Screenshot: popup yang menampilkan baris
+    Levenshtein dengan jumlah match $> 0$ dan kolom KMP/BM yang lebih sedikit dibanding kasus lain.}}
+    \label{fig:case4-popup}
+\end{figure}
+
+\subsubsection{Kasus 5: Iklan Judol Berbentuk Gambar (OCR)}
+
+Halaman: halaman yang memuat iklan judol dalam bentuk gambar (misalnya banner statis yang tidak punya teks DOM). Kasus ini
+menguji fitur bonus OCR via Tesseract.js: gambar dibaca, dicocokkan ke daftar kata kunci, lalu di-blur kalau positif.
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case5-page.png}
+    \caption{Kasus 5: gambar iklan judol yang sudah di-blur oleh ekstensi. \textit{Screenshot: tampilan sebelum/sesudah blur
+    (boleh dijadikan dua gambar berdampingan), plus tooltip yang menampilkan teks hasil OCR sebagai kata kunci.}}
+    \label{fig:case5-page}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \testimg{testing/case5-popup.png}
+    \caption{Kasus 5: popup memperlihatkan jumlah gambar yang dipindai dan jumlah yang positif. \textit{Screenshot: popup
+    dengan baris ``OCR'' atau ``Image scan'' yang menunjukkan kontribusinya.}}
+    \label{fig:case5-popup}
+\end{figure}
+
+\subsection{Analisis Perbandingan Performa}
+
+Tabel~\ref{tab:perf-summary} merangkum metrik per algoritma untuk kelima kasus. Untuk tiap kasus, dicatat waktu eksekusi
+(\texttt{executionTimeMs}), jumlah \textit{match}, dan jumlah perbandingan karakter (\texttt{comparisonCount}). Karena KMP
+dan BM jalan paralel terhadap pola yang sama, jumlah \textit{match} keduanya seharusnya identik, namun waktu dan
+\textit{comparison count}-nya berbeda. Angka pada tabel diisi setelah pengujian dijalankan.
+
+\begin{table}[H]
+    \centering
+    \caption{Ringkasan performa per algoritma per kasus. Waktu dalam ms, comparison count dalam satuan ribu.
+    \textit{Diisi setelah pengujian dijalankan.}}
+    \label{tab:perf-summary}
+    \begin{tabularx}{\textwidth}{l|*{5}{>{\centering\arraybackslash}X}}
+        \toprule
+        \textbf{Algoritma} & \textbf{Kasus 1} & \textbf{Kasus 2} & \textbf{Kasus 3} & \textbf{Kasus 4} & \textbf{Kasus 5} \\
+        \midrule
+        KMP            (ms)    & --- & --- & --- & --- & --- \\
+        Boyer-Moore    (ms)    & --- & --- & --- & --- & --- \\
+        RegEx          (ms)    & --- & --- & --- & --- & --- \\
+        Levenshtein    (ms)    & --- & --- & --- & --- & --- \\
+        Aho-Corasick   (ms)    & --- & --- & --- & --- & --- \\
+        Rabin-Karp     (ms)    & --- & --- & --- & --- & --- \\
+        \midrule
+        KMP            (comp.) & --- & --- & --- & --- & --- \\
+        Boyer-Moore    (comp.) & --- & --- & --- & --- & --- \\
+        Aho-Corasick   (comp.) & --- & --- & --- & --- & --- \\
+        Rabin-Karp     (comp.) & --- & --- & --- & --- & --- \\
+        \midrule
+        Total match              & --- & --- & --- & --- & --- \\
+        Match dari fuzzy         & --- & --- & --- & --- & --- \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Hipotesis yang ingin dibuktikan dari data tersebut:
+\begin{itemize}
+    \item Boyer-Moore akan unggul terhadap KMP dalam jumlah perbandingan karakter, terutama untuk kata kunci panjang seperti
+    \texttt{slot gacor}, karena karakter akhirnya jarang sama dengan akhir teks dan pola bisa langsung melompat.
+    \item Aho-Corasick akan unggul jauh untuk kasus dengan banyak kata kunci, karena teks cukup ditelusuri sekali untuk semua
+    pola, sementara KMP dan BM harus menelusuri ulang per kata kunci.
+    \item Rabin-Karp akan kompetitif untuk pola pendek, tapi mulai kalah saat sering terjadi tabrakan hash. Untuk pola panjang
+    dan teks padat, kemungkinan ada banyak \textit{spurious hit}.
+    \item Weighted Levenshtein hanya jalan untuk kata kunci yang miss di tahap exact, jadi total waktunya bergantung pada
+    seberapa banyak \textit{miss list}-nya. Kasus 4 seharusnya jadi kontribusi terbesarnya.
+    \item RegEx akan paling konsisten antar kasus karena pola tunggal dan engine native JavaScript, tapi tidak menggantikan
+    KMP/BM karena tidak menyaring berdasarkan daftar kata kunci.
+\end{itemize}
+
+Analisis lanjutan, termasuk grafik perbandingan waktu eksekusi rata-rata per algoritma, akan ditambahkan setelah semua data
+hasil pengujian terkumpul.
+
+% =======================================================================
+\newpage
+\section{Kesimpulan dan Saran}
 
 % =======================================================================
 \newpage
