@@ -5,3 +5,4 @@ export { levenshteinMatcher, weightedLevenshtein } from './levenshtein';
 export { loadKeywords } from './keywordLoader';
 export { scanText } from './matcherOrchestrator';
 export { ahoCorasickMatcher } from './ahoCorasick';
+export { rabinKarpMatcher } from './rabinKarp';
