@@ -1,5 +1,5 @@
-import Tesseract, { createWorker } from 'tesseract.js';
-import type { Worker } from 'tesseract.js';
+import Tesseract, { createWorker, createScheduler } from 'tesseract.js';
+import type { Worker, Scheduler } from 'tesseract.js';
 
 export interface OcrRecord {
   image: HTMLImageElement;
@@ -22,11 +22,18 @@ export interface OcrOptions {
   concurrency?: number;
   minSize?: number;
   verbose?: boolean;
+  loadTimeoutMs?: number;
+  maxDimension?: number;
+  // blur immediately
+  onImageText?: (image: HTMLImageElement, text: string) => void;
 }
 
 const DEFAULT_MIN_SIZE = 64;
 const DEFAULT_LANG = 'eng+ind';
-const LANG_CDN = 'https://tessdata.projectnaptha.com/4.0.0_best';
+const DEFAULT_CONCURRENCY = Math.min(4, Math.max(2, navigator.hardwareConcurrency || 2));
+const DEFAULT_LOAD_TIMEOUT_MS = 400;
+const DEFAULT_MAX_DIMENSION = 1024;
+const LANG_CDN = 'https://tessdata.projectnaptha.com/4.0.0_fast';
 const LOG_PREFIX = '[judol-ocr]';
 
 function log(verbose: boolean, ...args: unknown[]): void {
@@ -46,44 +53,25 @@ function getExtensionUrl(path: string): string | null {
   }
 }
 
-let workerPromise: Promise<Worker> | null = null;
-let activeLang = '';
-let forcedCoreFile: string | null = null;
-
-const KNOWN_BAD_VARIANTS: Record<string, string> = {
-  DotProductSSE: 'tesseract/core/tesseract-core-simd-lstm.wasm.js',
-};
+let schedulerPromise: Promise<Scheduler> | null = null;
+let activeKey = '';
+const PRIMARY_CORE_FILE = 'tesseract/core/tesseract-core-simd-lstm.wasm.js';
+const SAFE_CORE_FILE = 'tesseract/core/tesseract-core-lstm.wasm.js';
+let forcedCoreFile: string = PRIMARY_CORE_FILE;
 
 function pickFallbackVariant(err: string): string | null {
-  for (const [marker, target] of Object.entries(KNOWN_BAD_VARIANTS)) {
-    if (err.includes(marker)) return target;
-  }
-  if (err.includes('Aborted(missing function') || err.includes('RuntimeError')) {
-    return 'tesseract/core/tesseract-core-simd-lstm.wasm.js';
+  // Any abort/runtime error from the SIMD core --> drop to the no-SIMD core.
+  if (
+    err.includes('DotProductSSE') ||
+    err.includes('Aborted(missing function') ||
+    err.includes('RuntimeError')
+  ) {
+    return SAFE_CORE_FILE;
   }
   return null;
 }
 
-async function destroyWorker(): Promise<void> {
-  if (!workerPromise) return;
-  const prev = workerPromise;
-  workerPromise = null;
-  activeLang = '';
-  try {
-    const w = await prev;
-    await w.terminate();
-  } catch {
-    /* worker already dead */
-  }
-}
-
-async function getWorker(lang: string, verbose: boolean): Promise<Worker> {
-  if (workerPromise && activeLang === lang) return workerPromise;
-  if (workerPromise) await destroyWorker();
-
-  activeLang = lang;
-  log(verbose, 'initializing worker with langs:', lang, forcedCoreFile ? `(forced: ${forcedCoreFile})` : '');
-
+function createOcrWorker(lang: string): Promise<Worker> {
   const opts: Partial<Tesseract.WorkerOptions> = {
     cacheMethod: 'write',
     logger: () => {},
@@ -92,12 +80,96 @@ async function getWorker(lang: string, verbose: boolean): Promise<Worker> {
   const workerUrl = getExtensionUrl('tesseract/worker.min.js');
   if (workerUrl) opts.workerPath = workerUrl;
 
-  const coreFileOrDir = forcedCoreFile ?? 'tesseract/core/';
-  const coreUrl = getExtensionUrl(coreFileOrDir);
+  const coreUrl = getExtensionUrl(forcedCoreFile);
   if (coreUrl) opts.corePath = coreUrl;
 
-  workerPromise = createWorker(lang.split('+'), 1, opts);
-  return workerPromise;
+  return createWorker(lang.split('+'), 1, opts);
+}
+
+async function destroyScheduler(): Promise<void> {
+  if (!schedulerPromise) return;
+  const prev = schedulerPromise;
+  schedulerPromise = null;
+  activeKey = '';
+  try {
+    const s = await prev;
+    await s.terminate();
+  } catch {
+    /* scheduler already dead */
+  }
+}
+
+function buildScheduler(lang: string, poolSize: number, verbose: boolean): Promise<Scheduler> {
+  return (async () => {
+    log(
+      verbose,
+      `initializing scheduler: ${poolSize} worker(s), langs=${lang}`,
+      forcedCoreFile ? `(forced core: ${forcedCoreFile})` : '',
+    );
+    const scheduler = createScheduler();
+    const workers = await Promise.all(
+      Array.from({ length: poolSize }, () => createOcrWorker(lang)),
+    );
+    for (const w of workers) scheduler.addWorker(w);
+    return scheduler;
+  })();
+}
+
+const WARMUP_TIMEOUT_MS = 15000;
+
+// Runs a tiny recognition to surface a broken WASM core before the real pool work starts.
+async function warmupOk(scheduler: Scheduler): Promise<boolean> {
+  const canvas = document.createElement('canvas');
+  canvas.width = 8;
+  canvas.height = 8;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), WARMUP_TIMEOUT_MS);
+  });
+
+  const downgrade = (reason: string): boolean => {
+    if (forcedCoreFile !== SAFE_CORE_FILE) {
+      warn(`${reason}, switching core → ${SAFE_CORE_FILE}`);
+      forcedCoreFile = SAFE_CORE_FILE;
+      return false; // rebuild with the safe core
+    }
+    return true; // already on the safest core; nothing left to try
+  };
+
+  try {
+    const job = scheduler.addJob('recognize', canvas).then(() => 'ok' as const);
+    const outcome = await Promise.race([job, timeout]);
+    if (outcome === 'timeout') return downgrade('warmup timed out (worker likely aborted)');
+    return true;
+  } catch (err) {
+    if (pickFallbackVariant(String(err))) return downgrade('WASM abort during warmup');
+    // Not a recoverable core issue.
+    return true;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function getScheduler(lang: string, poolSize: number, verbose: boolean): Promise<Scheduler> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const key = `${lang}@${poolSize}@${forcedCoreFile ?? ''}`;
+    if (schedulerPromise && activeKey === key) return schedulerPromise;
+    if (schedulerPromise) await destroyScheduler();
+
+    activeKey = key;
+    schedulerPromise = buildScheduler(lang, poolSize, verbose);
+    const scheduler = await schedulerPromise;
+
+    if (attempt === 0 && (await warmupOk(scheduler))) return scheduler;
+    if (attempt === 0) {
+      await destroyScheduler();
+      continue;
+    }
+    return scheduler;
+  }
+  // Unreachable, but satisfies the type checker.
+  return schedulerPromise as Promise<Scheduler>;
 }
 
 function isSvgSource(img: HTMLImageElement): boolean {
@@ -125,23 +197,50 @@ function shouldScan(img: HTMLImageElement, minSize: number): boolean {
   return true;
 }
 
-function waitForImage(img: HTMLImageElement): Promise<boolean> {
+function waitForImage(img: HTMLImageElement, timeoutMs: number): Promise<boolean> {
   if (img.complete && img.naturalWidth > 0) return Promise.resolve(true);
   if (img.complete) return Promise.resolve(false);
   return new Promise((resolve) => {
-    img.addEventListener('load', () => resolve(img.naturalWidth > 0), { once: true });
-    img.addEventListener('error', () => resolve(false), { once: true });
+    let done = false;
+    const finish = (v: boolean) => {
+      if (done) return;
+      done = true;
+      resolve(v);
+    };
+    img.addEventListener('load', () => finish(img.naturalWidth > 0), { once: true });
+    img.addEventListener('error', () => finish(false), { once: true });
+    // Nudge lazy/off-screen images so their load actually fires.
+    if (img.loading === 'lazy') {
+      try {
+        img.loading = 'eager';
+      } catch {
+        /* read-only in some engines */
+      }
+    }
+    img.decode?.().then(() => finish(img.naturalWidth > 0)).catch(() => {});
+    // Never block the queue on a single image that refuses to load.
+    setTimeout(() => finish(img.naturalWidth > 0), timeoutMs);
   });
 }
 
-function tryDirectCanvas(img: HTMLImageElement): HTMLCanvasElement | null {
+// Returns the draw size capped so the longest side <= maxDimension, preserving
+// aspect ratio.
+function scaledSize(w: number, h: number, maxDimension: number): { width: number; height: number } {
+  const longest = Math.max(w, h);
+  if (longest <= maxDimension || longest === 0) return { width: w, height: h };
+  const scale = maxDimension / longest;
+  return { width: Math.round(w * scale), height: Math.round(h * scale) };
+}
+
+function tryDirectCanvas(img: HTMLImageElement, maxDimension: number): HTMLCanvasElement | null {
   try {
+    const { width, height } = scaledSize(img.naturalWidth, img.naturalHeight, maxDimension);
     const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(img, 0, 0, width, height);
     ctx.getImageData(0, 0, 1, 1);
     return canvas;
   } catch {
@@ -164,15 +263,19 @@ async function fetchImageBlob(url: string): Promise<Blob | null> {
   }
 }
 
-async function blobToCanvas(blob: Blob): Promise<HTMLCanvasElement | null> {
+async function blobToCanvas(blob: Blob, maxDimension: number): Promise<HTMLCanvasElement | null> {
   try {
     const bitmap = await createImageBitmap(blob);
+    const { width, height } = scaledSize(bitmap.width, bitmap.height, maxDimension);
     const canvas = document.createElement('canvas');
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.drawImage(bitmap, 0, 0);
+    if (!ctx) {
+      bitmap.close?.();
+      return null;
+    }
+    ctx.drawImage(bitmap, 0, 0, width, height);
     bitmap.close?.();
     return canvas;
   } catch {
@@ -189,51 +292,47 @@ interface OcrAttempt {
 
 async function ocrImage(
   img: HTMLImageElement,
-  lang: string,
+  scheduler: Scheduler,
   verbose: boolean,
+  timeoutMs: number,
+  maxDimension: number,
 ): Promise<OcrAttempt> {
-  const ready = await waitForImage(img);
-  if (!ready) return { text: '', error: 'image-not-loaded' };
+  const ready = await waitForImage(img, timeoutMs);
 
-  let source: HTMLCanvasElement | null = tryDirectCanvas(img);
+  let source: HTMLCanvasElement | null = ready ? tryDirectCanvas(img, maxDimension) : null;
   let sourceTag: OcrAttempt['source'] = source ? 'canvas' : undefined;
 
   if (!source) {
+    // Either the element never decoded, or its canvas is tainted. Both are
+    // recoverable by fetching the bytes ourselves, as long as we have a URL
+    // the background can refetch (blob:/data: are scoped to the page only).
     if (isOpaqueSource(img)) {
-      return { text: '', error: 'opaque-source-no-fallback' };
+      return { text: '', error: ready ? 'opaque-source-no-fallback' : 'image-not-loaded' };
     }
-    log(verbose, 'canvas tainted, fetching via background:', img.src);
-    const blob = await fetchImageBlob(img.src);
+    const url = img.currentSrc || img.src;
+    if (!url) return { text: '', error: 'image-not-loaded' };
+    log(verbose, ready ? 'canvas tainted, fetching via background:' : 'not decoded, fetching via background:', url);
+    const blob = await fetchImageBlob(url);
     if (!blob) return { text: '', error: 'background-fetch-failed' };
-    source = await blobToCanvas(blob);
+    source = await blobToCanvas(blob, maxDimension);
     if (!source) return { text: '', error: 'blob-decode-failed' };
     sourceTag = 'background-blob';
   }
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const worker = await getWorker(lang, verbose);
-      const { data } = await worker.recognize(source);
-      const text = (data.text ?? '').trim();
-      log(
-        verbose,
-        `recognized ${text.length} chars from ${img.src} [${sourceTag}]:`,
-        JSON.stringify(text.slice(0, 80)),
-      );
-      return { text, source: sourceTag, chars: text.length };
-    } catch (err) {
-      const msg = String(err);
-      const fallback = pickFallbackVariant(msg);
-      if (attempt === 0 && fallback && fallback !== forcedCoreFile) {
-        warn(`WASM abort detected, switching core variant → ${fallback}`);
-        forcedCoreFile = fallback;
-        await destroyWorker();
-        continue;
-      }
-      return { text: '', error: `tesseract: ${msg.slice(0, 200)}` };
-    }
+  try {
+    // The scheduler dispatches this to whichever worker is free, so multiple
+    // recognitions run in parallel across the pool.
+    const { data } = (await scheduler.addJob('recognize', source)) as Tesseract.RecognizeResult;
+    const text = (data.text ?? '').trim();
+    log(
+      verbose,
+      `recognized ${text.length} chars from ${img.src} [${sourceTag}]:`,
+      JSON.stringify(text.slice(0, 80)),
+    );
+    return { text, source: sourceTag, chars: text.length };
+  } catch (err) {
+    return { text: '', error: `tesseract: ${String(err).slice(0, 200)}` };
   }
-  return { text: '', error: 'tesseract: exhausted retries' };
 }
 
 function collectImages(root: Node, minSize: number): HTMLImageElement[] {
@@ -256,12 +355,42 @@ export async function collectImageText(options: OcrOptions = {}): Promise<OcrRes
   const baseOffset = options.baseOffset ?? 0;
   const lang = options.lang ?? DEFAULT_LANG;
   const verbose = options.verbose ?? false;
+  const timeoutMs = options.loadTimeoutMs ?? DEFAULT_LOAD_TIMEOUT_MS;
+  const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
+  const maxDimension = options.maxDimension ?? DEFAULT_MAX_DIMENSION;
 
   const candidates = collectImages(root, minSize);
-  log(verbose, `${candidates.length} image candidate(s)`);
+  log(verbose, `${candidates.length} image candidate(s), concurrency=${concurrency}`);
   if (candidates.length === 0) {
     return { fullText: '', records: [], scanned: 0, failed: 0 };
   }
+
+  // Pool size is bounded by the candidate count
+  const poolSize = Math.min(concurrency, candidates.length);
+  const scheduler = await getScheduler(lang, poolSize, verbose);
+
+  const attempts = new Array<OcrAttempt>(candidates.length);
+  let next = 0;
+  const runners = Array.from({ length: poolSize }, async () => {
+    while (next < candidates.length) {
+      const idx = next++;
+      try {
+        const attempt = await ocrImage(candidates[idx], scheduler, verbose, timeoutMs, maxDimension);
+        attempts[idx] = attempt;
+        // Blur the image immediately
+        if (attempt.text && options.onImageText) {
+          try {
+            options.onImageText(candidates[idx], attempt.text);
+          } catch (err) {
+            warn('onImageText callback threw:', err);
+          }
+        }
+      } catch (err) {
+        attempts[idx] = { text: '', error: `unexpected: ${String(err).slice(0, 120)}` };
+      }
+    }
+  });
+  await Promise.all(runners);
 
   const records: OcrRecord[] = [];
   const parts: string[] = [];
@@ -270,8 +399,8 @@ export async function collectImageText(options: OcrOptions = {}): Promise<OcrRes
   const errorTally: Record<string, number> = {};
   const sourceTally: Record<string, number> = {};
 
-  for (const img of candidates) {
-    const attempt = await ocrImage(img, lang, verbose);
+  for (let i = 0; i < candidates.length; i++) {
+    const attempt = attempts[i];
     if (attempt.error || !attempt.text) {
       failed++;
       const key = attempt.error ?? 'empty-text';
@@ -281,7 +410,7 @@ export async function collectImageText(options: OcrOptions = {}): Promise<OcrRes
     sourceTally[attempt.source ?? 'unknown'] =
       (sourceTally[attempt.source ?? 'unknown'] ?? 0) + 1;
     records.push({
-      image: img,
+      image: candidates[i],
       text: attempt.text,
       start: offset,
       end: offset + attempt.text.length,
