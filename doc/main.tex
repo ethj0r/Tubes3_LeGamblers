@@ -169,7 +169,223 @@ objektif.
 
 % =======================================================================
 \newpage
-\section{Theoretical Background}
+\section{Landasan Teori}
+
+\subsection{Algoritma Knuth-Morris-Pratt (KMP)}
+KMP pada dasarnya merupakan satu observasi sederhana pada matching brute-force. Jika pencarian gagal di tengah jalan, sebetulnya kita
+sudah punya cukup informasi dari karakter yang sudah dibandingkan untuk tahu sejauh mana pola harus digeser. Brute-force tidak
+peduli soal itu dan mengembalikan pointer teks ke posisi sebelumnya, jadi banyak perbandingan yang sudah dilakukan terbuang sia-sia.
+KMP memanfaatkan informasi tadi supaya pointer teks bisa terus maju. Hasilnya, kompleksitas pencariannya $O(n+m)$ untuk teks
+berukuran $n$ dan pola berukuran $m$.
+
+Kunci algoritma ini adalah \textit{border function}, yaitu tabel yang menyimpan
+panjang \textit{proper prefix} terpanjang pada pola yang sekaligus juga merupakan suffix-nya, sampai posisi tertentu. Tabel ini
+dihitung sekali di awal dengan kompleksitas $O(m)$. Kalau mismatch terjadi di indeks $i$ pada pola, pointer pola dipindahkan ke
+posisi $b[i-1]$, sementara pointer teks tetap di tempatnya. Contoh nilai border function untuk pola \texttt{ababaca} bisa dilihat
+di Tabel~\ref{tab:kmp-border}.
+
+\begin{table}[H]
+    \centering
+    \caption{Border function untuk pola \texttt{ababaca}.}
+    \label{tab:kmp-border}
+    \begin{tabular}{c|ccccccc}
+        \toprule
+        $i$    & 0 & 1 & 2 & 3 & 4 & 5 & 6 \\
+        $P[i]$ & a & b & a & b & a & c & a \\
+        $b[i]$ & 0 & 0 & 1 & 2 & 3 & 0 & 1 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Kompleksitas pencariannya sebetulnya linier baik di kasus terbaik maupun terburuk, cara mencapainya saja yang
+berbeda~\cite{kmpComplexitySO}. Misalkan pola berukuran $m$ dicari pada teks berukuran $n$. Kasus paling sederhana terjadi saat
+pola langsung ditemukan di awal teks dengan biaya $O(m)$ . 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{KMP/1.png}
+    \caption{Kasus terbaik trivial: pola langsung ditemukan di awal teks (source:
+    \href{https://stackoverflow.com/questions/63867161/what-is-the-best-worst-time-complexity-of-kmp-algorithm}{stackoverflow}).}
+    \label{fig:kmp-best-trivial}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{KMP/2.png}
+    \caption{Kasus terbaik saat pola tidak ada di teks: tiap mismatch jatuh di karakter pertama pola (source:
+    \href{https://stackoverflow.com/questions/63867161/what-is-the-best-worst-time-complexity-of-kmp-algorithm}{stackoverflow}).}
+    \label{fig:kmp-best-search}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{KMP/3.png}
+    \caption{Kasus terburuk: mismatch baru terjadi setelah hampir seluruh karakter pola dibandingkan (source:
+    \href{https://stackoverflow.com/questions/63867161/what-is-the-best-worst-time-complexity-of-kmp-algorithm}{stackoverflow}).}
+    \label{fig:kmp-worst}
+\end{figure}
+
+Di implementasi kami, perbandingan saat membangun border function juga ikut dihitung sebagai \textit{comparison count}, bukan
+cuma yang terjadi saat pencarian. Angka inilah yang nantinya dipakai untuk membandingkan performa antar algoritma di Bab 4.
+
+\subsection{Algoritma Boyer-Moore (BM)}
+Ciri utama Boyer-Moore adalah arah perbandingannya. Pointer pola tetap maju dari kiri ke kanan terhadap teks, tapi karakter
+pola dibandingkan dari kanan ke kiri. Cara ini memungkinkan pola melompat banyak karakter sekaligus saat mismatch, dan praktiknya
+sering lebih cepat dari KMP terutama untuk pola yang panjang. Boyer-Moore standar punya dua heuristik, \textit{bad character} dan
+\textit{good suffix}. Yang kami pakai di sini adalah
+\textit{bad character} via \textbf{last occurrence table}, yaitu tabel posisi kemunculan terakhir tiap karakter pada pola.
+
+Saat mismatch terjadi, ada dua kemungkinan yang ditangani heuristik ini~\cite{bmGeeksforGeeks}. Pertama, kalau karakter mismatch
+masih ada di pola, pola digeser supaya kemunculan terakhir karakter tersebut sejajar dengan posisi mismatch di teks
+(Figure~\ref{fig:bm-case1}). Kedua, kalau karakter mismatch tidak ada di pola sama sekali, pola langsung digeser melewati posisi
+mismatch tersebut (Figure~\ref{fig:bm-case2}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{boyer-moore/1.png}
+    \caption{Kasus mismatch berubah jadi match: karakter \texttt{A} yang mismatch di posisi 3 punya kemunculan terakhir di posisi
+    1 pola, jadi pola digeser dua langkah supaya keduanya sejajar (source:
+    \href{https://www.geeksforgeeks.org/dsa/boyer-moore-algorithm-for-pattern-searching/}{geeksforgeeks}).}
+    \label{fig:bm-case1}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{boyer-moore/2.png}
+    \caption{Kasus pola melewati karakter mismatch: karakter \texttt{C} tidak ada di pola, jadi pola langsung digeser melewati
+    posisi 7, dan kebetulan langsung ketemu match sempurna (source:
+    \href{https://www.geeksforgeeks.org/dsa/boyer-moore-algorithm-for-pattern-searching/}{geeksforgeeks}).}
+    \label{fig:bm-case2}
+\end{figure}
+
+Karena geseran bisa sampai $m$ karakter, kasus terbaiknya $O(n/m)$. Sayangnya kasus terburuknya tetap $O(nm)$ untuk teks dan pola
+yang kebetulan dirancang supaya geseran selalu kecil.
+
+\subsection{Algoritma Aho-Corasick (Bonus)}
+Aho-Corasick dipakai kalau yang ingin dicari bukan satu pola saja, tapi banyak pola sekaligus. Semua pola digabung jadi satu
+\textit{trie}, lalu tiap simpul dipasangi \textit{failure link}. Dengan struktur ini, banyak pola bisa dicocokkan dalam satu kali
+penyusuran teks, dan kompleksitasnya $O(n + m + z)$, dengan $m$ adalah total panjang seluruh pola dan $z$ adalah jumlah kemunculan
+yang ditemukan.
+
+\textit{Failure link} di sini mirip dengan border function pada KMP. Kalau mismatch terjadi di sebuah simpul, automaton tidak balik
+ke akar, tapi melompat ke simpul terdalam yang merepresentasikan \textit{proper suffix} terpanjang dari string yang sudah
+dicocokkan sejauh ini~\cite{ahoCorasickWiki}. Contoh struktur automatonnya dapat dilihat pada Gambar~\ref{fig:aho-corasick}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.3\textwidth]{aho/aho.png}
+    \caption{Contoh struktur automaton Aho-Corasick. Panah hitam adalah \textit{goto transition} dan panah biru adalah
+    \textit{failure link} yang menunjuk ke simpul terdalam yang merepresentasikan \textit{proper suffix} terpanjang dari string
+    yang sudah dicocokkan (sumber:
+    \href{https://en.wikipedia.org/wiki/Aho-Corasick_algorithm}{wikipedia}).}
+    \label{fig:aho-corasick}
+\end{figure}
+
+Untuk Judol Detector, daftar kata kunci judol bisa cukup panjang. Dengan KMP atau BM, teks harus diulang sebanyak jumlah kata
+kunci. Aho-Corasick cukup sekali jalan.
+
+\subsection{Algoritma Rabin-Karp (Bonus)}
+Rabin-Karp memakai pendekatan berbasis \textit{hashing}. Daripada membandingkan karakter satu per satu untuk tiap posisi pada
+teks, algoritma ini menghitung nilai hash dari setiap \textit{window} berukuran $m$ di teks, lalu membandingkannya dengan hash
+pola. Cuma kalau hash-nya cocok, baru dilakukan pengecekan karakter penuh untuk memastikan bukan tabrakan hash (\textit{spurious
+hit}).
+
+Yang membuat Rabin-Karp tetap efisien adalah \textbf{rolling hash}, biasanya Rabin fingerprint, yang memungkinkan perhitungan hash
+window berikutnya cuma $O(1)$ dari hash window sebelumnya. Kompleksitas rata-ratanya $O(n + m)$, walau worst-case-nya tetap $O(nm)$
+kalau hash sering bertabrakan. Rabin-Karp juga cocok untuk pencocokan multi-pola karena hash banyak pola bisa disimpan di tabel
+dan diuji bersamaan terhadap \textit{rolling hash} teks.
+
+\subsection{Weighted Levenshtein Distance}
+Levenshtein distance adalah jumlah operasi minimum (\textit{insert}, \textit{delete}, \textit{substitute}) untuk mengubah satu
+string jadi string lain. Versi standarnya memberi bobot yang sama untuk semua operasi, biasanya 1, dan dihitung pakai
+\textit{dynamic programming} dalam waktu $O(nm)$.
+
+Pada varian \textit{Weighted Levenshtein}, bobot tiap operasi bisa disetel berbeda-beda. Di kasus judol, substitusi antar karakter
+yang mirip secara visual (O dengan 0, I dengan 1, A dengan 4) diberi bobot lebih kecil daripada substitusi karakter yang
+benar-benar berbeda. Jadi penyamaran semacam \texttt{H0KI88} versus \texttt{HOKI88} tetap dianggap mirip, sementara substitusi
+acak akan dihukum penuh. Tabel~\ref{tab:lev-dp} mengilustrasikan perhitungannya untuk pasangan \texttt{OKI} dan \texttt{0KI}.
+
+\begin{table}[H]
+    \centering
+    \caption{Matriks DP Weighted Levenshtein untuk mengubah \texttt{OKI} menjadi \texttt{0KI}, dengan bobot substitusi
+    O$\leftrightarrow$0 sebesar 0.3 dan operasi lain bernilai 1. Sel pojok kanan bawah (cetak tebal) adalah jaraknya, yaitu 0.3.
+    Dengan bobot standar (semua substitusi bernilai 1), nilainya akan jadi 1, sehingga ambang batas kemiripan biasanya tidak
+    tercapai.}
+    \label{tab:lev-dp}
+    \begin{tabular}{c|cccc}
+        \toprule
+                      & $\varepsilon$ & \texttt{0} & \texttt{K} & \texttt{I} \\
+        \midrule
+        $\varepsilon$ & 0   & 1            & 2   & 3            \\
+        \texttt{O}    & 1   & 0.3          & 1.3 & 2.3          \\
+        \texttt{K}    & 2   & 1.3          & 0.3 & 1.3          \\
+        \texttt{I}    & 3   & 2.3          & 1.3 & \textbf{0.3} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Untuk membatasi sampai mana dua string masih dianggap cocok, dipakai ambang batas (\textit{threshold}) pada skor kemiripan
+($1 - \text{normalized distance}$). Perhitungan juga dipecah per token (split berdasarkan spasi) supaya teks panjang tidak salah
+cocok karena \textit{distance} menumpuk dari banyak kata sekaligus.
+
+\subsection{Regular Expression}
+\textit{Regular expression} (RegEx) adalah bahasa untuk mendefinisikan pola tekstual secara formal. Mesin RegEx modern, termasuk
+yang ada di JavaScript, biasanya berbasis NFA dengan \textit{backtracking}. Di sini, RegEx kami pakai untuk menangkap pola
+\texttt{<kata><angka>} yang sering jadi ciri khas nama situs judol, yaitu kombinasi minimal dua huruf diikuti minimal dua angka,
+dibatasi oleh \textit{word boundary}.
+
+Beda dari KMP atau BM yang butuh daftar kata kunci yang sudah diketahui, RegEx berperan sebagai \textit{discovery layer}. Kalau
+ada nama situs baru yang belum masuk daftar kata kunci tapi tetap mengikuti pola tersebut, ekstensi tetap bisa mendeteksinya.
+
+\subsection{Chromium Browser Extension}
+Chromium browser extension adalah perangkat lunak kecil yang dipasang di browser berbasis Chromium (Chrome, Edge, Brave, dan
+sejenisnya), yang bisa menambah atau memodifikasi fungsi browser saat menjelajah web. Sejak \textbf{Manifest V3}, sebuah ekstensi
+umumnya terdiri dari beberapa komponen utama.
+
+\begin{itemize}
+    \item \textbf{Manifest} (\texttt{manifest.json}), berkas konfigurasi yang mendeklarasikan nama, versi, izin
+    (\textit{permissions}), dan daftar komponen ekstensi.
+    \item \textbf{Content script}, skrip yang disuntikkan langsung ke halaman web dan bisa berinteraksi dengan DOM. Inilah
+    komponen yang menjalankan pemindaian teks pada Judol Detector.
+    \item \textbf{Popup}, halaman kecil yang muncul saat ikon ekstensi diklik, biasanya berisi UI untuk menampilkan ringkasan
+    informasi dan tombol-tombol kontrol.
+    \item \textbf{Service worker} (background), skrip latar yang menangani \textit{event} global dan menyimpan \textit{state}
+    ekstensi. Pada Manifest V3, service worker hanya hidup saat dibutuhkan, berbeda dengan background page Manifest V2 yang persisten.
+\end{itemize}
+
+Ketiga komponen ini berkomunikasi lewat API \texttt{chrome.runtime}, biasanya pakai pesan (\texttt{sendMessage} dan
+\texttt{onMessage}) atau lewat \texttt{chrome.storage} kalau perlu berbagi \textit{state}. Arsitektur Judol Detector secara umum
+tergambar pada Gambar~\ref{fig:architecture}.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=1.6cm and 1.8cm,
+        box/.style={rectangle, draw, rounded corners=2pt, minimum width=3cm, minimum height=1.1cm, align=center, font=\small},
+        store/.style={cylinder, draw, shape border rotate=90, aspect=0.25, minimum width=2.6cm, minimum height=1cm, align=center,
+            font=\small},
+        arrow/.style={->, >=stealth, thick}
+    ]
+        \node[box] (page) {Halaman Web\\(DOM)};
+        \node[box, right=of page] (content) {Content Script\\\textit{scan + highlight + tooltip}};
+        \node[box, right=of content] (sw) {Service Worker\\\textit{state global, toggle}};
+
+        \node[box, below=of content] (popup) {Popup UI\\\textit{statistik realtime}};
+        \node[store, below=of page] (kw) {keywords.txt};
+
+        \draw[arrow] (page.east) -- node[above, font=\scriptsize] {DOM nodes} (content.west);
+        \draw[arrow] (content.south west) -- node[left, font=\scriptsize] {load} (kw.north east);
+        \draw[arrow] (content.east) -- node[above, font=\scriptsize] {ScanReport} (sw.west);
+        \draw[arrow] (sw.south) |- (popup.east);
+        \draw[arrow] (popup.west) -| node[below right, font=\scriptsize] {Rescan / Blur} (content.south);
+    \end{tikzpicture}
+    \caption{Arsitektur Judol Detector. \textit{Content script} adalah pemain utama yang menyentuh DOM dan menjalankan algoritma
+    pencocokan, sementara popup dan \textit{service worker} berperan sebagai pengontrol dan penampung \textit{state}.}
+    \label{fig:architecture}
+\end{figure}
+
+Pada Judol Detector, \textit{content script} bertugas menelusuri DOM dan menjalankan algoritma pencocokan, popup menampilkan
+statistik \textit{realtime} hasil pemindaian beserta kontrol \textit{blur toggle} dan \textit{rescan}, sedangkan \textit{service
+worker} memelihara \textit{state} global seperti status \textit{blur} antar tab.
 
 % =======================================================================
 \newpage
@@ -191,6 +407,21 @@ objektif.
 A.~V.~Aho, M.~S.~Lam, R.~Sethi, and J.~D.~Ullman,
 \textit{Compilers: Principles, Techniques, and Tools}, 2nd ed.
 Addison-Wesley, 2006.
+
+\bibitem{kmpComplexitySO}
+``What is the best/worst time complexity of KMP algorithm?,''
+Stack Overflow, Sep.~2020. [Online]. Available:
+\url{https://stackoverflow.com/questions/63867161/what-is-the-best-worst-time-complexity-of-kmp-algorithm}
+
+\bibitem{bmGeeksforGeeks}
+``Boyer-Moore Algorithm for Pattern Searching,''
+GeeksforGeeks. [Online]. Available:
+\url{https://www.geeksforgeeks.org/dsa/boyer-moore-algorithm-for-pattern-searching/}
+
+\bibitem{ahoCorasickWiki}
+``Aho-Corasick algorithm,''
+Wikipedia. [Online]. Available:
+\url{https://en.wikipedia.org/wiki/Aho-Corasick_algorithm}
 
 \end{thebibliography}
 
