@@ -147,13 +147,33 @@
 \newpage
 \section{Overview}
 
+Proyek ini kami kerjakan untuk memenuhi Tugas Besar 3 mata kuliah IF2211 Strategi Algoritma. Topiknya sudah ditentukan,
+yaitu membuat sebuah \textit{Chromium browser extension} yang bisa mendeteksi konten judi online di halaman web, sekaligus
+jadi tempat menerapkan algoritma pencocokan string yang dipelajari di kelas.
+
+Topik judol sendiri sebetulnya relevan jika dilihat dari kondisi sekarang. Iklannya ada di mana-mana, mulai dari hasil pencarian
+Google, kolom komentar YouTube, sampai sisipan iklan di situs yang sebenarnya tidak ada hubungannya sama sekali dengan perjudian.
+Nama-nama yang dipakai pun mirip semua, biasanya berpola \texttt{<kata><angka>} seperti GACOR99, MAXWIN88, atau MADU308, supaya 
+gampang diingat dan susah disaring otomatis. Tidak jarang pelakunya juga menyamarkan tulisan dengan karakter yang bentuknya mirip,
+misalnya huruf O jadi angka 0, A jadi 4, atau I jadi 1, sehingga filter yang cuma membandingkan string mentah sering kebobolan.
+
+Ekstensi yang kami bangun untuk tugas ini kami beri nama \textbf{Judol Detector}. Begitu halaman selesai dimuat, ekstensi akan
+menelusuri DOM, mencocokkan teks dengan daftar kata kunci, lalu menandai elemen yang mengandung kemunculan kata kunci tersebut.
+Pengguna bisa mengarahkan kursor ke teks yang ditandai untuk melihat detailnya, atau membuka panel popup ekstensi untuk melihat
+ringkasan statistik secara keseluruhan. Pencocokan kata kunci dijalankan dengan beberapa algoritma sekaligus, yaitu Knuth-Morris-Pratt
+dan Boyer-Moore untuk tahap pencocokan eksak, RegEx untuk menangkap pola \texttt{<kata><angka>} yang belum tentu ada di daftar kata kunci,
+lalu Weighted Levenshtein Distance untuk tahap fuzzy yang menangani kasus penyamaran karakter. Seluruh algoritma string matching
+dibuat \textit{from scratch}, tanpa bantuan \texttt{String.includes()}, \texttt{String.indexOf()}, atau pustaka pencocokan string apapun.
+Tiap algoritma juga menghitung jumlah perbandingan karakter (\textit{comparison counting}) supaya performanya bisa dibandingkan secara
+objektif.
+
 % =======================================================================
 \newpage
 \section{Theoretical Background}
 
 % =======================================================================
 \newpage
-\section{Implementation \& Testing}
+\section{Problem Analysis \& Solution Design}
 
 % =======================================================================
 \newpage
@@ -176,7 +196,7 @@ Addison-Wesley, 2006.
 
 % =======================================================================
 \newpage
-\section*{Appendix}
+\section*{Appendices}
 \addcontentsline{toc}{section}{Appendix}
 
 \subsection*{Statement}
