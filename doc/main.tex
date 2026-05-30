@@ -953,6 +953,29 @@ hasil pengujian terkumpul.
 \newpage
 \section{Kesimpulan dan Saran}
 
+\subsection{Kesimpulan}
+
+Dari proses pengembangan Judol Detector, deteksi konten judol ternyata bisa dipetakan dengan rapi ke algoritma string
+matching klasik, yaitu kata kunci dari \texttt{keywords.txt} jadi pola, teks tiap \texttt{TextNode} jadi teks, dan border function
+(KMP) serta last occurrence table (Boyer-Moore) jadi struktur \textit{preprocessing}-nya. Karena satu algoritma saja tidak cukup
+menangani ragam bentuk konten judol di lapangan, kami menyusun pipeline tiga tahap yang saling melengkapi: \textit{exact} (KMP
+$\Vert$ BM) untuk kata kunci yang sudah dikenal, RegEx sebagai \textit{discovery layer} untuk nama berpola \texttt{<kata><angka>}
+yang belum terdaftar, dan Weighted Levenshtein untuk menjaring penyamaran karakter visual. Hasil pengukuran \textit{comparison
+count} dan waktu eksekusi menegaskan kembali teori yang dipelajari di kelas, di mana Boyer-Moore lebih hemat perbandingan untuk
+pola panjang sementara KMP unggul dalam konsistensi karena selalu linier, dan tambahan bonus berupa Aho-Corasick, Rabin-Karp,
+OCR via Tesseract.js, serta \textit{blur} memperluas jangkauan deteksi tanpa mengubah inti pipeline.
+
+\subsection{Saran}
+
+Dari sisi pengembangan lanjutan, bobot \textit{leetspeak} dan \textit{threshold} fuzzy yang saat ini ditetapkan manual bisa
+diturunkan secara lebih sistematis dari data kemiripan visual antar karakter, supaya penyamaran yang lebih kreatif tetap
+tertangkap tanpa menaikkan \textit{false positive}. Tahap fuzzy berbasis Weighted Levenshtein yang sekarang dipanggil per kata
+kunci yang \textit{miss} juga bisa diganti dengan automaton Levenshtein atau penyaringan awal berbasis \textit{n-gram} supaya
+tetap ringan untuk daftar yang sangat panjang. Selain itu, OCR Tesseract.js bisa dibantu praproses gambar (peningkatan kontras,
+\textit{binarization}) untuk banner judol yang penuh ornamen, \texttt{keywords.txt} bisa diperbarui secara berkala dari sumber
+tepercaya supaya ekstensi tetap relevan, dan cakupan deteksi bisa diperluas ke konten di dalam \texttt{<iframe>} atau elemen
+video yang saat ini belum ditangani DOM walker.
+
 % =======================================================================
 \newpage
 \begin{thebibliography}{9}
@@ -976,6 +999,16 @@ GeeksforGeeks. [Online]. Available:
 ``Aho-Corasick algorithm,''
 Wikipedia. [Online]. Available:
 \url{https://en.wikipedia.org/wiki/Aho-Corasick_algorithm}
+
+\bibitem{munirStringMatching}
+R.~Munir, ``Pencocokan String,'' Bahan Kuliah IF2211 Strategi Algoritma, Program Studi Teknik Informatika, Institut Teknologi
+Bandung, 2025/2026. [Online]. Available:
+\url{https://informatika.stei.itb.ac.id/~rinaldi.munir/Stmik/2025-2026/23-Pencocokan-string-(2026).pdf}
+
+\bibitem{munirRegex}
+R.~Munir, ``String Matching dengan Regex,'' Bahan Kuliah IF2211 Strategi Algoritma, Program Studi Teknik Informatika, Institut
+Teknologi Bandung, 2025/2026. [Online]. Available:
+\url{https://informatika.stei.itb.ac.id/~rinaldi.munir/Stmik/2025-2026/24-String-Matching-dengan-Regex-(2026).pdf}
 
 \end{thebibliography}
 
