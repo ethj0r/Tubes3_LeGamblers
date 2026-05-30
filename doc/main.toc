@@ -1,0 +1,27 @@
+\contentsline {section}{\numberline {1}Overview}{3}{section.1}%
+\contentsline {section}{\numberline {2}Theoritical Background}{4}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Algoritma Knuth-Morris-Pratt (KMP)}{4}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Algoritma Boyer-Moore (BM)}{5}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Algoritma Aho-Corasick (Bonus)}{6}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Algoritma Rabin-Karp (Bonus)}{7}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Weighted Levenshtein Distance}{7}{subsection.2.5}%
+\contentsline {subsection}{\numberline {2.6}Regular Expression}{8}{subsection.2.6}%
+\contentsline {subsection}{\numberline {2.7}Chromium Browser Extension}{8}{subsection.2.7}%
+\contentsline {section}{\numberline {3}Problem Analysis \& Solution Design}{10}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Langkah-langkah Pemecahan Masalah}{10}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Pipeline Pencocokan Tiga Tahap}{11}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Pemetaan Masalah ke Elemen KMP dan Boyer-Moore}{12}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Fitur Fungsional dan Arsitektur}{12}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Contoh Ilustrasi Kasus}{13}{subsection.3.5}%
+\contentsline {section}{\numberline {4}Implementasi dan Pengujian}{15}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Spesifikasi Teknis Program}{15}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Tata Cara Penggunaan Ekstensi}{16}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Hasil Pengujian}{17}{subsection.4.3}%
+\contentsline {subsubsection}{\numberline {4.3.1}Kasus 1: Hasil Pencarian Google dengan Kata Kunci Judol}{17}{subsubsection.4.3.1}%
+\contentsline {subsubsection}{\numberline {4.3.2}Kasus 2: Komentar Spam Judol pada Halaman Video}{18}{subsubsection.4.3.2}%
+\contentsline {subsubsection}{\numberline {4.3.3}Kasus 3: Halaman Situs Judol Langsung}{18}{subsubsection.4.3.3}%
+\contentsline {subsubsection}{\numberline {4.3.4}Kasus 4: Halaman dengan Penyamaran Karakter Visual}{19}{subsubsection.4.3.4}%
+\contentsline {subsubsection}{\numberline {4.3.5}Kasus 5: Iklan Judol Berbentuk Gambar (OCR)}{20}{subsubsection.4.3.5}%
+\contentsline {subsection}{\numberline {4.4}Analisis Perbandingan Performa}{20}{subsection.4.4}%
+\contentsline {section}{\numberline {5}Kesimpulan dan Saran}{22}{section.5}%
+\contentsline {section}{Appendix}{24}{section*.31}%
