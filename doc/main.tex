@@ -841,7 +841,8 @@ saat hampir setiap kalimat memicu match.
 
 \begin{figure}[H]
     \centering
-    \testimg{testing/case3-page.png}
+    \testimg{testing/case3-page (1).png}
+    \testimg{testing/case3-page (2).png}
     \caption{Kasus 3: situs judol dengan hampir seluruh teks ter-highlight. \textit{Screenshot: tampilan halaman utama situs
     judol dengan highlight padat, sertakan juga area yang sudah di-blur kalau \textit{toggle blur} aktif.}}
     \label{fig:case3-page}
@@ -884,7 +885,8 @@ menguji fitur bonus OCR via Tesseract.js: gambar dibaca, dicocokkan ke daftar ka
 
 \begin{figure}[H]
     \centering
-    \testimg{testing/case5-page.png}
+    \testimg{testing/case5-page (3).png}
+    \testimg{testing/case5-page (2).png}
     \caption{Kasus 5: gambar iklan judol yang sudah di-blur oleh ekstensi. \textit{Screenshot: tampilan sebelum/sesudah blur
     (boleh dijadikan dua gambar berdampingan), plus tooltip yang menampilkan teks hasil OCR sebagai kata kunci.}}
     \label{fig:case5-page}
@@ -914,20 +916,17 @@ dan BM jalan paralel terhadap pola yang sama, jumlah \textit{match} keduanya seh
         \toprule
         \textbf{Algoritma} & \textbf{Kasus 1} & \textbf{Kasus 2} & \textbf{Kasus 3} & \textbf{Kasus 4} & \textbf{Kasus 5} \\
         \midrule
-        KMP            (ms)    & --- & --- & --- & --- & --- \\
-        Boyer-Moore    (ms)    & --- & --- & --- & --- & --- \\
-        RegEx          (ms)    & --- & --- & --- & --- & --- \\
-        Levenshtein    (ms)    & --- & --- & --- & --- & --- \\
-        Aho-Corasick   (ms)    & --- & --- & --- & --- & --- \\
-        Rabin-Karp     (ms)    & --- & --- & --- & --- & --- \\
+        KMP            (ms)    & 14.20 & 12.10 & 79.50 & 2.80 & 1.20 \\
+        Boyer-Moore    (ms)    & 8.50 & 7.40 & 88.10 & 1.50 & 1.20 \\
+        RegEx          (ms)    & 0.10 & 0.10 & 0.20 & 0 & 0.10 \\
+        Levenshtein    (ms)    & 398.50 & 230.10 & 4167.60 & 75.40 & 68.30 \\
+        Aho-Corasick   (ms)    & 1.00 & 1.10 & 1.70 & 4.80 & 0.40 \\
+        Rabin-Karp     (ms)    & 29.60 & 24.60 & 454.50 & 7.90 & 9.10 \\
         \midrule
-        KMP            (comp.) & --- & --- & --- & --- & --- \\
-        Boyer-Moore    (comp.) & --- & --- & --- & --- & --- \\
-        Aho-Corasick   (comp.) & --- & --- & --- & --- & --- \\
-        Rabin-Karp     (comp.) & --- & --- & --- & --- & --- \\
-        \midrule
-        Total match              & --- & --- & --- & --- & --- \\
-        Match dari fuzzy         & --- & --- & --- & --- & --- \\
+        KMP            (comp.) & 283.833 & 283.833 & 1.814.122 & 477 & 6.620 \\
+        Boyer-Moore    (comp.) & 70.518 & 70.518 & 409.505 & 128 & 1.692 \\
+        Aho-Corasick   (comp.) & 424.926 & 424.926 & 2.324.839 & 682 & 8.333 \\
+        Rabin-Karp     (comp.) & 276.010 & 276.010 & 1.784.115 & 449 & 5.546 \\
         \bottomrule
     \end{tabularx}
 \end{table}
@@ -1018,15 +1017,89 @@ Teknologi Bandung, 2025/2026. [Online]. Available:
 \addcontentsline{toc}{section}{Appendix}
 
 \subsection*{Statement}
+\begin{center}
+\begin{tabular}{|p{13cm}|}
+\hline
+\\
+Tugas ini disusun sepenuhnya tanpa bantuan kecerdasan buatan (\textit{Generative AI}),
+melainkan hasil pemikiran dan analisis mandiri.
+
+\vspace{2cm}
+
+\begin{flushright}
+\begin{tabular}{c}
+\includegraphics[width=1.5cm]{ttd1.png} \\
+\underline{Made Branenda Jordhy} \\[1.5cm]
+\includegraphics[width=5cm]{ttd2.png} \\
+\underline{Stefani Angeline Oroh} \\[1.3cm]
+\includegraphics[width=2cm]{ttd3.png} \\
+\underline{Michael James Liman} \\[1cm]
+\end{tabular}
+\end{flushright}
+
+\\
+\hline
+\end{tabular}
+\end{center}
 
 \subsection*{GitHub Repository}
 
 \url{https://github.com/ethj0r/Tubes3_LeGamblers}
 
-\subsection*{Video Link}
-
 \subsection*{Spesification Checklist}
+\begin{table}[H]
+\centering
+\caption{Checklist Pemenuhan Spesifikasi}
+\label{tab:checklist}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{|c|p{9cm}|c|c|}
+\hline
+\textbf{No} & \textbf{Poin} & \textbf{Ya} & \textbf{Tidak} \\
+\hline
+1 & Extension berhasil di-build dan di-load tanpa kesalahan pada chromium browser dan dikembangkan dengan TypeScript & \checkmark & \\
+\hline
+2 & KMP dan Boyer-Moore diimplementasikan from scratch & \checkmark & \\
+\hline
+3 & Regex menghandle format <kata><angka> dan berbagai edge case & \checkmark & \\
+\hline
+4 & Pencarian KMP dan BM membaca keyword.txt secara iteratif dan tidak menggunakan built-in search function atau library eksternal & \checkmark & \\
+\hline
+5 & Exact matching dan fuzzy matching berjalan benar & \checkmark & \\
+\hline
+6 & Elemen DOM terdeteksi diberi highlight dan terhapus saat rescanning & \checkmark & \\
+\hline
+7 & Tooltip muncul saat hover dengan informasi keyword, algoritma, kemunculan, dan waktu eksekusi & \checkmark & \\
+\hline
+8 & Popup menampilkan statistik realtime (total keyword, perbandingan, waktu eksekusi, jumlah match) & \checkmark & \\
+\hline
+9 & {[Bonus]} Membuat Video & & \checkmark \\
+\hline
+10 & {[Bonus]} Implementasi Algoritma Aho-Corasick dan Rabin Karp & \checkmark & \\
+\hline
+11 & {[Bonus]} Implementasi Censorship / Blur Teks & \checkmark & \\
+\hline
+12 & {[Bonus]}  Implementasi Optical Character Recognition pada Gambar & \checkmark & \\
+\hline
+\end{tabular}
+\end{table}
 
 \subsection*{Task Distribution}
+\begin{table}[H]
+\centering
+\caption{Pembagian Tugas Anggota Kelompok}
+\label{tab:pembagian-tugas}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{|c|p{3.5cm}|p{2.5cm}|p{5cm}|}
+\hline
+\textbf{No} & \textbf{Nama} & \textbf{NIM} & \textbf{Tugas} \\
+\hline
+1 & Made Branenda Jordhy & 13524026 &  Laporan; KMP; Boyermoore; OCR\\
+\hline
+2 & Stefani Angeline Oroh & 13524064 & Laporan dan Final Testing; AHO algorithm; Regex algorithm; Popup UI \\
+\hline
+3 & Michael James Liman & 13524106 & Laporan; Rabin Karp algorithm; Lavenshtein; Blur Text\\
+\hline
+\end{tabular}
+\end{table}
 
 \end{document}
