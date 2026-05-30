@@ -292,6 +292,41 @@ async function blobToCanvas(blob: Blob, maxDimension: number): Promise<HTMLCanva
   }
 }
 
+// flatten transparency onto black so it reads as one background
+// invert when the image is light-on-dark so polarity matches what Tesseract was trained on
+function preprocess(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || canvas.width === 0 || canvas.height === 0) return;
+
+  let img: ImageData;
+  try {
+    img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  } catch {
+    return; // tainted canvas, leave it untouched
+  }
+  const px = img.data;
+
+  let sum = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3] / 255;
+    // Transparent areas collapse to black (treated as background below)
+    const lum = (0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]) * a;
+    px[i] = px[i + 1] = px[i + 2] = lum;
+    px[i + 3] = 255;
+    sum += lum;
+  }
+
+  // Mostly dark => light text on a dark background. Invert so the background
+  // becomes white and the text dark
+  if (sum / (px.length / 4) < 128) {
+    for (let i = 0; i < px.length; i += 4) {
+      px[i] = px[i + 1] = px[i + 2] = 255 - px[i];
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+}
+
 interface OcrAttempt {
   text: string;
   error?: string;
@@ -327,6 +362,8 @@ async function ocrImage(
     if (!source) return { text: '', error: 'blob-decode-failed' };
     sourceTag = 'background-blob';
   }
+
+  preprocess(source);
 
   try {
     // The scheduler dispatches this to whichever worker is free, so multiple
