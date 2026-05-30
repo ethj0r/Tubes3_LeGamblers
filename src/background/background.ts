@@ -7,12 +7,13 @@ async function fetchImageAsDataUrl(url: string): Promise<string> {
   if (!blob.type.startsWith('image/')) {
     throw new Error(`unexpected mime: ${blob.type}`);
   }
-  return await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return `data:${blob.type};base64,${btoa(binary)}`;
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

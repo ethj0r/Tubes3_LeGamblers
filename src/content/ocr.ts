@@ -1,4 +1,4 @@
-import Tesseract, { createWorker, createScheduler } from 'tesseract.js';
+import Tesseract, { createWorker, createScheduler, PSM } from 'tesseract.js';
 import type { Worker, Scheduler } from 'tesseract.js';
 
 export interface OcrRecord {
@@ -33,6 +33,8 @@ const DEFAULT_LANG = 'eng+ind';
 const DEFAULT_CONCURRENCY = Math.min(4, Math.max(2, navigator.hardwareConcurrency || 2));
 const DEFAULT_LOAD_TIMEOUT_MS = 400;
 const DEFAULT_MAX_DIMENSION = 1024;
+const UPSCALE_TARGET = 800;
+const MAX_UPSCALE = 3;
 const LANG_CDN = 'https://tessdata.projectnaptha.com/4.0.0_fast';
 const LOG_PREFIX = '[judol-ocr]';
 
@@ -71,7 +73,7 @@ function pickFallbackVariant(err: string): string | null {
   return null;
 }
 
-function createOcrWorker(lang: string): Promise<Worker> {
+async function createOcrWorker(lang: string): Promise<Worker> {
   const opts: Partial<Tesseract.WorkerOptions> = {
     cacheMethod: 'write',
     logger: () => {},
@@ -83,7 +85,9 @@ function createOcrWorker(lang: string): Promise<Worker> {
   const coreUrl = getExtensionUrl(forcedCoreFile);
   if (coreUrl) opts.corePath = coreUrl;
 
-  return createWorker(lang.split('+'), 1, opts);
+  const worker = await createWorker(lang.split('+'), 1, opts);
+  await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+  return worker;
 }
 
 async function destroyScheduler(): Promise<void> {
@@ -223,12 +227,17 @@ function waitForImage(img: HTMLImageElement, timeoutMs: number): Promise<boolean
   });
 }
 
-// Returns the draw size capped so the longest side <= maxDimension, preserving
-// aspect ratio.
 function scaledSize(w: number, h: number, maxDimension: number): { width: number; height: number } {
   const longest = Math.max(w, h);
-  if (longest <= maxDimension || longest === 0) return { width: w, height: h };
-  const scale = maxDimension / longest;
+  if (longest === 0) return { width: w, height: h };
+
+  let scale = 1;
+  if (longest > maxDimension) {
+    scale = maxDimension / longest;
+  } else if (longest < UPSCALE_TARGET) {
+    scale = Math.min(MAX_UPSCALE, UPSCALE_TARGET / longest);
+  }
+  if (scale === 1) return { width: w, height: h };
   return { width: Math.round(w * scale), height: Math.round(h * scale) };
 }
 
