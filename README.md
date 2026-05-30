@@ -1,75 +1,55 @@
-# React + TypeScript + Vite
+# Judol Detector
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Chromium browser extension untuk mendeteksi konten judi online (judol) pada halaman web menggunakan string matching. 
 
-Currently, two official plugins are available:
+> built for Tugas Besar 3 IF2211 Strategi Algoritma.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Algorithms
 
-## React Compiler
+### Knuth-Morris-Pratt (KMP)
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+Pencocokan string yang memanfaatkan informasi kecocokan parsial sehingga pointer teks tidak perlu mundur saat mismatch. Memakai *border function* (failure function) untuk menentukan seberapa jauh pola digeser. Kompleksitas pencarian `O(n + m)` untuk teks berukuran `n` dan pola berukuran `m`, ditambah preprocessing `O(m)`.
 
-Note: This will impact Vite dev & build performances.
+### Boyer-Moore (BM)
 
-## Expanding the ESLint configuration
+Pencocokan string yang membandingkan karakter pola dari kanan ke kiri sementara pola tetap maju ke kanan pada teks. Memakai heuristik *bad character* lewat *last occurrence table*, sehingga pola bisa melompat banyak karakter sekaligus saat mismatch. Kasus terbaik `O(n / m)`, worst case `O(n * m)`.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Requirement
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Node.js >= 20
+- pnpm >= 9
+- Browser berbasis Chromium (Chrome, Edge, Brave)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## How to Install
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+git clone https://github.com/ethj0r/Tubes3_LeGamblers.git
+cd Tubes3_LeGamblers
+pnpm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Build & Load Extension
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+1. Build production bundle:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+   ```bash
+   pnpm build
+   ```
+
+   Output dihasilkan di folder `dist/`.
+
+2. Buka `chrome://extensions` di browser.
+
+3. Aktifkan **Developer mode** (toggle kanan atas).
+
+4. Klik **Load unpacked**, pilih folder `dist/`.
+
+5. Ekstensi aktif. Buka halaman web target, pemindaian berjalan otomatis.
+
+## Authors
+
+| Nama | NIM |
+| --- | --- |
+| Made Branenda Jordhy | 13524026 |
+| Stefani Angeline Oroh | 13524064 |
+| Michael James Liman | 13524106 |
