@@ -148,6 +148,9 @@ section h2 {
 
 /* Preferences */
 .section-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 11px 16px;
 }
 

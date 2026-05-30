@@ -7,9 +7,16 @@ const REPORT_KEY = 'judolDetectorReport'
 interface Prefs {
   censorMode: boolean
   enableOcr: boolean
+  enableAhoCorasick: boolean
+  enableRabinKarp: boolean
 }
 
-const DEFAULT_PREFS: Prefs = { censorMode: false, enableOcr: true }
+const DEFAULT_PREFS: Prefs = {
+  censorMode: false,
+  enableOcr: false,
+  enableAhoCorasick: false,
+  enableRabinKarp: false,
+}
 
 const ALGO_COLORS: Record<AlgorithmName, string> = {
   KMP: '#4f8ef7',
@@ -101,12 +108,26 @@ export function PopupApp() {
     }
   }, [])
 
-  const toggleCensor = useCallback(async () => {
-    const next: Prefs = { ...prefs, censorMode: !prefs.censorMode }
-    setPrefs(next)
-    await writePrefs(next)
-    void triggerRescan()
-  }, [prefs, triggerRescan])
+  const updatePref = useCallback(
+    async (patch: Partial<Prefs>) => {
+      const next: Prefs = { ...prefs, ...patch }
+      setPrefs(next)
+      await writePrefs(next)
+      void triggerRescan()
+    },
+    [prefs, triggerRescan],
+  )
+
+  const toggleCensor = useCallback(() => updatePref({ censorMode: !prefs.censorMode }), [prefs, updatePref])
+  const toggleOcr = useCallback(() => updatePref({ enableOcr: !prefs.enableOcr }), [prefs, updatePref])
+  const toggleAhoCorasick = useCallback(
+    () => updatePref({ enableAhoCorasick: !prefs.enableAhoCorasick }),
+    [prefs, updatePref],
+  )
+  const toggleRabinKarp = useCallback(
+    () => updatePref({ enableRabinKarp: !prefs.enableRabinKarp }),
+    [prefs, updatePref],
+  )
 
   const maxKeywordCount = report ? Math.max(1, ...Object.values(report.matchesByKeyword)) : 1
 
@@ -133,6 +154,18 @@ export function PopupApp() {
         <label className="pref-toggle">
           <input type="checkbox" checked={prefs.censorMode} onChange={toggleCensor} />
           <span>Blur konten judol</span>
+        </label>
+        <label className="pref-toggle">
+          <input type="checkbox" checked={prefs.enableAhoCorasick} onChange={toggleAhoCorasick} />
+          <span>Algoritma Aho-Corasick</span>
+        </label>
+        <label className="pref-toggle">
+          <input type="checkbox" checked={prefs.enableRabinKarp} onChange={toggleRabinKarp} />
+          <span>Algoritma Rabin-Karp</span>
+        </label>
+        <label className="pref-toggle">
+          <input type="checkbox" checked={prefs.enableOcr} onChange={toggleOcr} />
+          <span>OCR gambar (Tesseract)</span>
         </label>
       </section>
 

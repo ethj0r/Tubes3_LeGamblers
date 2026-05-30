@@ -12,6 +12,8 @@ export interface ContentSearchOptions {
   keywords: string[];
   root?: Node;
   enableOcr?: boolean;
+  enableAhoCorasick?: boolean;
+  enableRabinKarp?: boolean;
   censorMode?: boolean;
   ocrLang?: string;
   ocrConcurrency?: number;
@@ -24,9 +26,16 @@ const REPORT_KEY = 'judolDetectorReport';
 interface Prefs {
   censorMode: boolean;
   enableOcr: boolean;
+  enableAhoCorasick: boolean;
+  enableRabinKarp: boolean;
 }
 
-const DEFAULT_PREFS: Prefs = { censorMode: false, enableOcr: true };
+const DEFAULT_PREFS: Prefs = {
+  censorMode: false,
+  enableOcr: false,
+  enableAhoCorasick: false,
+  enableRabinKarp: false,
+};
 
 let currentReport: ScanReport | null = null;
 let isScanning = false;
@@ -124,8 +133,9 @@ async function flagImageEagerly(
   image: HTMLImageElement,
   text: string,
   keywords: string[],
+  bonus: { enableAhoCorasick: boolean; enableRabinKarp: boolean },
 ): Promise<void> {
-  const { matches } = await scanText(text, keywords);
+  const { matches } = await scanText(text, keywords, bonus);
   if (matches.length === 0) return;
   const record: OcrRecord = { image, text, start: 0, end: text.length };
   flagMatchedImages(matches, [record]);
@@ -148,10 +158,13 @@ export async function runContentSearch(options: ContentSearchOptions): Promise<S
   const prefs = await loadPrefs();
   const censorMode = options.censorMode ?? prefs.censorMode;
   const enableOcr = options.enableOcr ?? prefs.enableOcr;
+  const enableAhoCorasick = options.enableAhoCorasick ?? prefs.enableAhoCorasick;
+  const enableRabinKarp = options.enableRabinKarp ?? prefs.enableRabinKarp;
+  const bonus = { enableAhoCorasick, enableRabinKarp };
 
   const { fullText, records } = collectPageText(options.root);
 
-  const initial = await scanText(fullText, options.keywords);
+  const initial = await scanText(fullText, options.keywords, bonus);
   const apply = censorMode ? censorMatches : highlightMatches;
   if (initial.matches.length > 0) {
     apply(initial.matches, records);
@@ -172,12 +185,13 @@ export async function runContentSearch(options: ContentSearchOptions): Promise<S
       concurrency: options.ocrConcurrency,
       minSize: options.ocrMinSize,
       verbose: true,
-      onImageText: (image, text) => void flagImageEagerly(image, text, options.keywords),
+      onImageText: (image, text) =>
+        void flagImageEagerly(image, text, options.keywords, bonus),
     });
 
     if (ocr.records.length > 0) {
       const combined = `${fullText}\n${ocr.fullText}`;
-      const combinedScan = await scanText(combined, options.keywords);
+      const combinedScan = await scanText(combined, options.keywords, bonus);
       const { ocrMatches } = partitionMatches(combinedScan.matches, fullText.length);
 
       if (ocrMatches.length > 0) {
